@@ -1,0 +1,16 @@
+import type { Config, ResolvedRegister, SwitchChainErrorType } from '@wagmi/core';
+import type { Compute, ConfigParameter } from '@wagmi/core/internal';
+import { type SwitchChainData, type SwitchChainMutate, type SwitchChainMutateAsync, type SwitchChainOptions, type SwitchChainVariables } from '@wagmi/core/query';
+import type { UseMutationReturnType } from '../utils/query.js';
+export type UseSwitchChainParameters<config extends Config = Config, context = unknown> = Compute<ConfigParameter<config> & SwitchChainOptions<config, context>>;
+export type UseSwitchChainReturnType<config extends Config = Config, context = unknown> = Compute<UseMutationReturnType<SwitchChainData<config, config['chains'][number]['id']>, SwitchChainErrorType, SwitchChainVariables<config, config['chains'][number]['id']>, context, SwitchChainMutate<config, context>, SwitchChainMutateAsync<config, context>> & {
+    /** @deprecated use `useChains` instead */
+    chains: config['chains'];
+    /** @deprecated use `mutate` instead */
+    switchChain: SwitchChainMutate<config, context>;
+    /** @deprecated use `mutateAsync` instead */
+    switchChainAsync: SwitchChainMutateAsync<config, context>;
+}>;
+/** https://wagmi.sh/react/api/hooks/useSwitchChain */
+export declare function useSwitchChain<config extends Config = ResolvedRegister['config'], context = unknown>(parameters?: UseSwitchChainParameters<config, context>): UseSwitchChainReturnType<config, context>;
+//# sourceMappingURL=useSwitchChain.d.ts.map

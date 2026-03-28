@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#080c12"/>
+      <stop offset="100%" stop-color="#0d1a26"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00e5ff"/>
+      <stop offset="100%" stop-color="#00b0ff"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softglow">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Grid lines (subtle) -->
+  <g opacity="0.04" stroke="#00e5ff" stroke-width="1">
+    <line x1="0" y1="105" x2="1200" y2="105"/>
+    <line x1="0" y1="210" x2="1200" y2="210"/>
+    <line x1="0" y1="315" x2="1200" y2="315"/>
+    <line x1="0" y1="420" x2="1200" y2="420"/>
+    <line x1="0" y1="525" x2="1200" y2="525"/>
+    <line x1="200" y1="0" x2="200" y2="630"/>
+    <line x1="400" y1="0" x2="400" y2="630"/>
+    <line x1="600" y1="0" x2="600" y2="630"/>
+    <line x1="800" y1="0" x2="800" y2="630"/>
+    <line x1="1000" y1="0" x2="1000" y2="630"/>
+  </g>
+
+  <!-- Glow orb top-left -->
+  <circle cx="150" cy="150" r="200" fill="#00e5ff" opacity="0.03" filter="url(#softglow)"/>
+  <!-- Glow orb bottom-right -->
+  <circle cx="1050" cy="480" r="250" fill="#00b0ff" opacity="0.04" filter="url(#softglow)"/>
+
+  <!-- Border -->
+  <rect x="24" y="24" width="1152" height="582" rx="16" fill="none" stroke="#1a2332" stroke-width="1.5"/>
+
+  <!-- Corner marks -->
+  <line x1="24" y1="54" x2="24" y2="24" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="24" y1="24" x2="54" y2="24" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="1176" y1="576" x2="1176" y2="606" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="1176" y1="606" x2="1146" y2="606" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="1176" y1="54" x2="1176" y2="24" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <line x1="1176" y1="24" x2="1146" y2="24" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <line x1="24" y1="576" x2="24" y2="606" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+  <line x1="24" y1="606" x2="54" y2="606" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+
+  <!-- Icon mark -->
+  <rect x="80" y="220" width="120" height="120" rx="20" fill="#0a1018"/>
+  <rect x="80" y="220" width="120" height="120" rx="20" fill="none" stroke="url(#cyan)" stroke-width="2" opacity="0.6"/>
+  <text x="140" y="302" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="900" font-size="72" fill="url(#cyan)" filter="url(#glow)">S</text>
+  <!-- circuit corner marks on icon -->
+  <line x1="88" y1="238" x2="88" y2="228" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="88" y1="228" x2="98" y2="228" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="192" y1="322" x2="192" y2="332" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+  <line x1="192" y1="332" x2="182" y2="332" stroke="#00e5ff" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- Wordmark -->
+  <text x="224" y="285" font-family="'IBM Plex Mono', 'Courier New', monospace" font-weight="700" font-size="72" letter-spacing="4" fill="#e0e8f0">SIGNAL</text>
+  <text x="224" y="285" font-family="'IBM Plex Mono', 'Courier New', monospace" font-weight="700" font-size="72" letter-spacing="4" fill="#e0e8f0" opacity="0">X</text>
+  <!-- PAY -->
+  <text x="736" y="285" font-family="'IBM Plex Mono', 'Courier New', monospace" font-weight="700" font-size="72" letter-spacing="4" fill="#00e5ff" filter="url(#glow)">PAY</text>
+
+  <!-- Tagline -->
+  <text x="224" y="330" font-family="'IBM Plex Mono', 'Courier New', monospace" font-weight="400" font-size="18" letter-spacing="5" fill="#3a5060">AI AGENT ALPHA MARKETPLACE</text>
+
+  <!-- Divider -->
+  <line x1="80" y1="370" x2="1120" y2="370" stroke="#1a2332" stroke-width="1"/>
+
+  <!-- Stat pills -->
+  <!-- Pill 1 -->
+  <rect x="80" y="400" width="230" height="70" rx="8" fill="#0a1018" stroke="#1a2332" stroke-width="1"/>
+  <text x="100" y="425" font-family="'IBM Plex Mono', monospace" font-size="10" letter-spacing="2" fill="#3a5060">PAYMENT</text>
+  <text x="100" y="452" font-family="'IBM Plex Mono', monospace" font-weight="700" font-size="20" fill="#00e5ff">x402 + EIP-3009</text>
+
+  <!-- Pill 2 -->
+  <rect x="330" y="400" width="200" height="70" rx="8" fill="#0a1018" stroke="#1a2332" stroke-width="1"/>
+  <text x="350" y="425" font-family="'IBM Plex Mono', monospace" font-size="10" letter-spacing="2" fill="#3a5060">MIN PRICE</text>
+  <text x="350" y="452" font-family="'IBM Plex Mono', monospace" font-weight="700" font-size="20" fill="#76ff03">$0.001 / call</text>
+
+  <!-- Pill 3 -->
+  <rect x="550" y="400" width="200" height="70" rx="8" fill="#0a1018" stroke="#1a2332" stroke-width="1"/>
+  <text x="570" y="425" font-family="'IBM Plex Mono', monospace" font-size="10" letter-spacing="2" fill="#3a5060">GAS COST</text>
+  <text x="570" y="452" font-family="'IBM Plex Mono', monospace" font-weight="700" font-size="20" fill="#76ff03">$0.00 / tx</text>
+
+  <!-- Pill 4 -->
+  <rect x="770" y="400" width="200" height="70" rx="8" fill="#0a1018" stroke="#1a2332" stroke-width="1"/>
+  <text x="790" y="425" font-family="'IBM Plex Mono', monospace" font-size="10" letter-spacing="2" fill="#3a5060">NETWORK</text>
+  <text x="790" y="452" font-family="'IBM Plex Mono', monospace" font-weight="700" font-size="20" fill="#ea80fc">ARC TESTNET</text>
+
+  <!-- Pill 5 -->
+  <rect x="990" y="400" width="130" height="70" rx="8" fill="#0a1018" stroke="#1a2332" stroke-width="1"/>
+  <text x="1010" y="425" font-family="'IBM Plex Mono', monospace" font-size="10" letter-spacing="2" fill="#3a5060">IDENTITY</text>
+  <text x="1010" y="452" font-family="'IBM Plex Mono', monospace" font-weight="700" font-size="20" fill="#ffab00">ERC-8004</text>
+
+  <!-- Live indicator -->
+  <circle cx="1120" cy="54" r="5" fill="#76ff03" filter="url(#glow)"/>
+  <text x="1100" y="58" text-anchor="end" font-family="'IBM Plex Mono', monospace" font-size="11" letter-spacing="2" fill="#76ff03">LIVE</text>
+
+  <!-- Hackathon badge -->
+  <text x="80" y="560" font-family="'IBM Plex Mono', monospace" font-size="11" letter-spacing="3" fill="#2a3a4a">NANO PAYMENTS ON ARC HACKATHON  •  MAY 2026  •  CIRCLE</text>
+</svg>

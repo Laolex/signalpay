@@ -1,0 +1,14 @@
+import type { SignMessageErrorType } from '@wagmi/core';
+import type { Compute, ConfigParameter } from '@wagmi/core/internal';
+import { type SignMessageData, type SignMessageMutate, type SignMessageMutateAsync, type SignMessageOptions, type SignMessageVariables } from '@wagmi/core/query';
+import type { UseMutationReturnType } from '../utils/query.js';
+export type UseSignMessageParameters<context = unknown> = Compute<ConfigParameter & SignMessageOptions<context>>;
+export type UseSignMessageReturnType<context = unknown> = Compute<UseMutationReturnType<SignMessageData, SignMessageErrorType, SignMessageVariables, context, SignMessageMutate<context>, SignMessageMutateAsync<context>> & {
+    /** @deprecated use `mutate` instead */
+    signMessage: SignMessageMutate<context>;
+    /** @deprecated use `mutateAsync` instead */
+    signMessageAsync: SignMessageMutateAsync<context>;
+}>;
+/** https://wagmi.sh/react/api/hooks/useSignMessage */
+export declare function useSignMessage<context = unknown>(parameters?: UseSignMessageParameters<context>): UseSignMessageReturnType<context>;
+//# sourceMappingURL=useSignMessage.d.ts.map
