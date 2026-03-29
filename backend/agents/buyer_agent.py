@@ -49,7 +49,7 @@ class AgentState(TypedDict):
 
 @dataclass
 class AgentConfig:
-    signalpay_api_url: str = "http://localhost:8000"
+    signalpay_api_url: str = os.getenv("SIGNALPAY_API_URL", "https://signalpay-production.up.railway.app")
     gateway_wallet: str = ""          # Circle Gateway wallet address
     private_key: str = ""             # For signing EIP-3009 authorizations
     session_budget: float = 0.10      # $0.10 budget per session
