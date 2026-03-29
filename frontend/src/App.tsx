@@ -184,7 +184,7 @@ function AgentConsole({ signals, onSignal }: { signals: ReturnType<typeof genera
     setSignalCount(0);
 
     try {
-      const resp = await fetch("http://localhost:8000/agent/run", { method: "POST" });
+      const resp = await fetch(`${API_BASE}/agent/run`, { method: "POST" });
       const reader = resp.body!.getReader();
       const decoder = new TextDecoder();
       let buf = "";
