@@ -1,4 +1,5 @@
 import type { MutateOptions, MutationOptions } from '@tanstack/query-core'
+
 import {
   type SendTransactionSyncErrorType,
   type SendTransactionSyncParameters,
@@ -6,41 +7,22 @@ import {
   sendTransactionSync,
 } from '../actions/sendTransactionSync.js'
 import type { Config } from '../createConfig.js'
-import type { MutationParameter } from '../types/query.js'
 import type { Compute } from '../types/utils.js'
 
-export type SendTransactionSyncOptions<
-  config extends Config,
-  context = unknown,
-> = MutationParameter<
-  SendTransactionSyncData,
-  SendTransactionSyncErrorType,
-  SendTransactionSyncVariables<config, config['chains'][number]['id']>,
-  context
->
-
-export function sendTransactionSyncMutationOptions<
-  config extends Config,
-  context,
->(
+export function sendTransactionSyncMutationOptions<config extends Config>(
   config: config,
-  options: SendTransactionSyncOptions<config, context> = {},
-): SendTransactionSyncMutationOptions<config> {
+) {
   return {
-    ...(options.mutation as any),
     mutationFn(variables) {
       return sendTransactionSync(config, variables)
     },
     mutationKey: ['sendTransactionSync'],
-  }
-}
-
-export type SendTransactionSyncMutationOptions<config extends Config> =
-  MutationOptions<
+  } as const satisfies MutationOptions<
     SendTransactionSyncData,
     SendTransactionSyncErrorType,
     SendTransactionSyncVariables<config, config['chains'][number]['id']>
   >
+}
 
 export type SendTransactionSyncData = Compute<SendTransactionSyncReturnType>
 

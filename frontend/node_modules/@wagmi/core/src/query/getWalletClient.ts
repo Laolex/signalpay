@@ -1,3 +1,5 @@
+import type { QueryOptions } from '@tanstack/query-core'
+
 import {
   type GetWalletClientErrorType,
   type GetWalletClientParameters,
@@ -6,51 +8,34 @@ import {
 } from '../actions/getWalletClient.js'
 import type { Config } from '../createConfig.js'
 import type { ScopeKeyParameter } from '../types/properties.js'
-import type { QueryOptions, QueryParameter } from '../types/query.js'
 import type { Compute, ExactPartial } from '../types/utils.js'
 import { filterQueryOptions } from './utils.js'
 
 export type GetWalletClientOptions<
   config extends Config,
   chainId extends config['chains'][number]['id'],
-  selectData = GetWalletClientData<config, chainId>,
 > = Compute<
   ExactPartial<GetWalletClientParameters<config, chainId>> & ScopeKeyParameter
-> &
-  QueryParameter<
-    GetWalletClientQueryFnData<config, chainId>,
-    GetWalletClientErrorType,
-    selectData,
-    GetWalletClientQueryKey<config, chainId>
-  >
+>
 
 export function getWalletClientQueryOptions<
   config extends Config,
   chainId extends config['chains'][number]['id'],
-  selectData = GetWalletClientData<config, chainId>,
->(
-  config: config,
-  options: GetWalletClientOptions<config, chainId, selectData> = {},
-): GetWalletClientQueryOptions<config, chainId, selectData> {
+>(config: config, options: GetWalletClientOptions<config, chainId> = {}) {
   return {
-    ...options.query,
-    enabled: Boolean(
-      options.connector?.getProvider && (options.query?.enabled ?? true),
-    ),
     gcTime: 0,
-    queryFn: async (context) => {
-      if (!options.connector?.getProvider)
-        throw new Error('connector is required')
-      const [, { connectorUid: _, scopeKey: __, ...parameters }] =
-        context.queryKey
-      return getWalletClient(config, {
-        ...parameters,
-        connector: options.connector,
-      }) as never
+    async queryFn({ queryKey }) {
+      const { connector } = options
+      const { connectorUid: _, scopeKey: _s, ...parameters } = queryKey[1]
+      return getWalletClient(config, { ...parameters, connector }) as never
     },
     queryKey: getWalletClientQueryKey(options),
-    staleTime: Number.POSITIVE_INFINITY,
-  }
+  } as const satisfies QueryOptions<
+    GetWalletClientQueryFnData<config, chainId>,
+    GetWalletClientErrorType,
+    GetWalletClientData<config, chainId>,
+    GetWalletClientQueryKey<config, chainId>
+  >
 }
 
 export type GetWalletClientQueryFnData<
@@ -66,26 +51,15 @@ export type GetWalletClientData<
 export function getWalletClientQueryKey<
   config extends Config,
   chainId extends config['chains'][number]['id'],
->(
-  options: Compute<
-    ExactPartial<GetWalletClientParameters<config, chainId>> & ScopeKeyParameter
-  > = {},
-) {
-  return ['walletClient', filterQueryOptions(options)] as const
+>(options: GetWalletClientOptions<config, chainId> = {}) {
+  const { connector, ...parameters } = options
+  return [
+    'walletClient',
+    { ...filterQueryOptions(parameters), connectorUid: connector?.uid },
+  ] as const
 }
 
 export type GetWalletClientQueryKey<
   config extends Config,
   chainId extends config['chains'][number]['id'],
 > = ReturnType<typeof getWalletClientQueryKey<config, chainId>>
-
-export type GetWalletClientQueryOptions<
-  config extends Config,
-  chainId extends config['chains'][number]['id'],
-  selectData = GetWalletClientData<config, chainId>,
-> = QueryOptions<
-  GetWalletClientQueryFnData<config, chainId>,
-  GetWalletClientErrorType,
-  selectData,
-  GetWalletClientQueryKey<config, chainId>
->

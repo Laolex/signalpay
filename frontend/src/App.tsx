@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { API_BASE } from "./api";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { useAccount, useChainId } from "wagmi";
 import { useRegistryStats, useAllProviders } from "./useRegistry";
@@ -288,7 +289,7 @@ function SignalExplorer() {
   const [stats, setStats] = useState<{ total_calls: number; total_revenue_usdc: number } | null>(null);
 
   useEffect(() => {
-    fetch("/discovery/providers")
+    fetch(`${API_BASE}/discovery/providers`)
       .then((r) => r.json())
       .then((data) => {
         const raw = data.providers || [];
@@ -304,7 +305,7 @@ function SignalExplorer() {
         })));
       })
       .catch(() => {});
-    fetch("/stats")
+    fetch(`${API_BASE}/stats`)
       .then((r) => r.json())
       .then(setStats)
       .catch(() => {});
@@ -408,7 +409,7 @@ function ProviderDashboard() {
     : PROVIDERS.map((p) => ({ ...p, categoryName: p.category, priceUSDC: p.price, reputation: p.reputation }));
 
   useEffect(() => {
-    fetch("/stats").then((r) => r.json()).then(setStats).catch(() => {});
+    fetch(`${API_BASE}/stats`).then((r) => r.json()).then(setStats).catch(() => {});
   }, []);
 
   const totalEarnings = stats?.total_revenue_usdc ?? 0;
@@ -594,7 +595,7 @@ export default function SignalPayApp() {
     let cancelled = false;
     const poll = async () => {
       try {
-        const resp = await fetch("/feed");
+        const resp = await fetch(`${API_BASE}/feed`);
         if (!cancelled && resp.ok) {
           const data = await resp.json();
           const norm = normalizeSignal(data.signal);
