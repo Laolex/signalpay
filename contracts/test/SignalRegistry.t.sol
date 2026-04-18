@@ -252,4 +252,115 @@ contract SignalRegistryTest is Test {
         );
         assertEq(active.length, 0);
     }
+
+    // ── Deactivate / Reactivate lifecycle ──────────────────────────────
+
+    /// @notice Deactivating must NOT free up the agent identity slot. This was
+    ///         the original zombie-provider bug: agent could re-register with
+    ///         a new providerId, and `categoryProviders` would serve up both.
+    function test_Deactivate_DoesNotFreeAgentIdentity() public {
+        vm.startPrank(alice);
+        uint256 id = registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/first",
+            "First", "", SignalRegistry.SignalCategory.WHALE_ALERT, 2000
+        );
+        registry.deactivate(id);
+
+        // Attempting to register again must revert — the agent ID is still claimed.
+        vm.expectRevert(abi.encodeWithSelector(
+            SignalRegistry.AgentAlreadyRegistered.selector, AGENT_ID_ALICE
+        ));
+        registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/second",
+            "Zombie", "", SignalRegistry.SignalCategory.PRICE_ORACLE, 1000
+        );
+        vm.stopPrank();
+    }
+
+    function test_Reactivate_RestoresProvider() public {
+        vm.startPrank(alice);
+        uint256 id = registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/x",
+            "Test", "", SignalRegistry.SignalCategory.WHALE_ALERT, 2000
+        );
+        registry.deactivate(id);
+        (,,,,,,,,, bool activeAfter) = registry.getProvider(id);
+        assertFalse(activeAfter);
+
+        registry.reactivate(id);
+        (,,,,,,,,, bool activeNow) = registry.getProvider(id);
+        assertTrue(activeNow);
+        vm.stopPrank();
+    }
+
+    function test_Reactivate_WhenAlreadyActive_Reverts() public {
+        vm.startPrank(alice);
+        uint256 id = registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/x",
+            "Test", "", SignalRegistry.SignalCategory.WHALE_ALERT, 2000
+        );
+        vm.expectRevert(abi.encodeWithSelector(
+            SignalRegistry.ProviderAlreadyActive.selector, id
+        ));
+        registry.reactivate(id);
+        vm.stopPrank();
+    }
+
+    function test_Deactivate_WhenInactive_Reverts() public {
+        vm.startPrank(alice);
+        uint256 id = registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/x",
+            "Test", "", SignalRegistry.SignalCategory.WHALE_ALERT, 2000
+        );
+        registry.deactivate(id);
+        vm.expectRevert(abi.encodeWithSelector(
+            SignalRegistry.ProviderNotActive.selector, id
+        ));
+        registry.deactivate(id);
+        vm.stopPrank();
+    }
+
+    function test_UpdatePrice_WhenInactive_Reverts() public {
+        vm.startPrank(alice);
+        uint256 id = registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/x",
+            "Test", "", SignalRegistry.SignalCategory.WHALE_ALERT, 2000
+        );
+        registry.deactivate(id);
+        vm.expectRevert(abi.encodeWithSelector(
+            SignalRegistry.ProviderNotActive.selector, id
+        ));
+        registry.updatePrice(id, 5000);
+        vm.stopPrank();
+    }
+
+    function test_UpdateEndpoint_WhenInactive_Reverts() public {
+        vm.startPrank(alice);
+        uint256 id = registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/x",
+            "Test", "", SignalRegistry.SignalCategory.WHALE_ALERT, 2000
+        );
+        registry.deactivate(id);
+        vm.expectRevert(abi.encodeWithSelector(
+            SignalRegistry.ProviderNotActive.selector, id
+        ));
+        registry.updateEndpoint(id, "https://api.example.com/signals/y");
+        vm.stopPrank();
+    }
+
+    function test_Reactivate_NotOwner_Reverts() public {
+        vm.prank(alice);
+        uint256 id = registry.registerProvider(
+            AGENT_ID_ALICE, alice, "https://api.example.com/signals/x",
+            "Test", "", SignalRegistry.SignalCategory.WHALE_ALERT, 2000
+        );
+        vm.prank(alice);
+        registry.deactivate(id);
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(
+            SignalRegistry.NotProviderOwner.selector, id
+        ));
+        registry.reactivate(id);
+    }
 }

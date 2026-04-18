@@ -298,7 +298,9 @@ function SignalExplorer() {
           name: p.name || p.id,
           category: (p.id || "").toUpperCase(),
           price: p.price_usdc || 0,
-          reputation: Math.floor(Math.random() * 10) + 88,
+          // Reputation reads from ERC-8004 are not yet wired in the UI —
+          // show a placeholder rather than a misleading random value.
+          reputation: 0,
           calls: 0,
           endpoint: p.endpoint || "",
           status: "live",
@@ -403,10 +405,12 @@ function ProviderDashboard() {
   const { data: totalOnChain } = useRegistryStats();
   const { providers: chainProviders, isLoading: loadingProviders } = useAllProviders(Number(totalOnChain ?? 0));
 
-  // Merge chain providers with reputation scores (simulated until ERC-8004 reputation reads)
+  // Reputation values come from ERC-8004 ReputationRegistry reads, which are
+  // not yet implemented in the frontend — show 0 until that's wired up so we
+  // don't display fabricated scores as if they were on-chain.
   const repProviders = chainProviders.length > 0
-    ? chainProviders.map((p) => ({ ...p, reputation: 88 + Number(p.totalCalls % 10n) }))
-    : PROVIDERS.map((p) => ({ ...p, categoryName: p.category, priceUSDC: p.price, reputation: p.reputation }));
+    ? chainProviders.map((p) => ({ ...p, reputation: 0 }))
+    : PROVIDERS.map((p) => ({ ...p, categoryName: p.category, priceUSDC: p.price, reputation: 0 }));
 
   useEffect(() => {
     fetch(`${API_BASE}/stats`).then((r) => r.json()).then(setStats).catch(() => {});
@@ -521,7 +525,7 @@ function Faucet() {
             border: "none", borderRadius: 4, padding: "10px 20px", cursor: "pointer",
             fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
           }}>
-            DRIP 10 USDC
+            COPY & OPEN FAUCET
           </button>
         </div>
         {status && (

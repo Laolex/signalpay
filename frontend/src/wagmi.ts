@@ -11,7 +11,12 @@ export const arcTestnet = defineChain({
   testnet: true,
 });
 
-export const SIGNAL_REGISTRY_ADDRESS = "0x0ac5a3d3b0787bc97f101a75854bbec62ee97cc6" as const;
+// Override via `VITE_SIGNAL_REGISTRY_ADDRESS` in .env; the fallback keeps the
+// current Arc Testnet deployment usable for local dev without extra setup.
+export const SIGNAL_REGISTRY_ADDRESS = (
+  import.meta.env.VITE_SIGNAL_REGISTRY_ADDRESS ??
+  "0x0ac5a3d3b0787bc97f101a75854bbec62ee97cc6"
+) as `0x${string}`;
 
 export const SIGNAL_REGISTRY_ABI = [
   { inputs: [], name: "totalProviders", outputs: [{ internalType: "uint256", name: "", type: "uint256" }], stateMutability: "view", type: "function" },

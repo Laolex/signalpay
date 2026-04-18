@@ -49,7 +49,7 @@ class AgentState(TypedDict):
 
 @dataclass
 class AgentConfig:
-    signalpay_api_url: str = os.getenv("SIGNALPAY_API_URL", "https://signalpay-production.up.railway.app")
+    signalpay_api_url: str = os.getenv("SIGNALPAY_API_URL", "http://localhost:8000")
     gateway_wallet: str = ""          # Circle Gateway wallet address
     private_key: str = ""             # For signing EIP-3009 authorizations
     session_budget: float = 0.10      # $0.10 budget per session
@@ -181,8 +181,10 @@ def pay_and_fetch(state: AgentState) -> AgentState:
                 "verifyingContract", "0x0077777d7EBA4688BDeF3E311b846F25870A19B9"
             )
 
-            # Step 3: Sign EIP-712 TransferWithAuthorization
-            private_key = os.getenv("PRIVATE_KEY", "")
+            # Step 3: Sign EIP-712 TransferWithAuthorization.
+            # Prefer a buyer-specific key so the provider wallet's key isn't
+            # reused on the buyer side.
+            private_key = os.getenv("BUYER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY", "")
             nonce = "0x" + secrets.token_hex(32)
             valid_before = int(time.time()) + 5 * 24 * 3600  # 5 days (Circle requires > 3 days)
 
@@ -231,9 +233,20 @@ def pay_and_fetch(state: AgentState) -> AgentState:
                 signature = signed.signature.hex()
                 if not signature.startswith("0x"):
                     signature = "0x" + signature
-            except Exception:
-                agent_address = config.gateway_wallet or "0xAgentWallet"
-                signature = f"0x{'ab' * 65}"
+            except Exception as e:
+                # Without a real signature, the server's validator will reject
+                # the request. We surface the failure instead of sending a
+                # bogus signature that used to succeed under the old simulator.
+                return {
+                    **state,
+                    "signal_data": None,
+                    "messages": state["messages"] + [
+                        {"role": "assistant", "content": (
+                            f"✗ Cannot sign x402 authorization: {e}. "
+                            f"Set BUYER_PRIVATE_KEY to enable real payments."
+                        )}
+                    ],
+                }
 
             authorization = {
                 "from": agent_address,
@@ -361,33 +374,70 @@ def record_reputation(state: AgentState) -> AgentState:
     """
     Record provider reputation feedback on-chain via ERC-8004.
 
-    Scores providers based on signal quality:
-    - High confidence + actionable data → high score
-    - Low confidence or stale data → low score
+    Calls `ReputationRegistry.giveFeedback(...)` on Arc Testnet. If no buyer key
+    is configured (or RPC is unreachable), we log the feedback locally and mark
+    `tx_hash=None` so downstream tooling can tell real on-chain feedback from
+    best-effort intent.
+
+    Scoring: `confidence` in [0, 1] → score in [0, 100], clamped on-chain.
     """
+    from app.reputation import give_feedback
+
     signal = state.get("signal_data")
     provider = state.get("selected_provider")
 
     if not signal or not provider:
         return state
 
-    confidence = signal.get("confidence", 0.5)
-    score = int(confidence * 100)  # 0-100 scale
+    confidence = float(signal.get("confidence", 0.5))
+    score = int(max(0.0, min(1.0, confidence)) * 100)
+    category = signal.get("category", "unknown")
+
+    # ERC-8004 agent IDs must be uint256. Provider dicts coming from the
+    # discovery API expose a string-ish id — prefer an explicit `agent_id`,
+    # fall back to a stable hash of the provider name so demos still run.
+    agent_id = provider.get("agent_id")
+    if agent_id is None:
+        agent_id = int(
+            hashlib.sha256(str(provider.get("name", "?")).encode()).hexdigest()[:12],
+            16,
+        )
+
+    result = give_feedback(
+        agent_id=int(agent_id),
+        score_0_100=score,
+        tag1="signal_quality",
+        tag2=category,
+        endpoint=provider.get("endpoint", ""),
+    )
 
     feedback = {
         "provider_id": provider.get("id", "unknown"),
+        "agent_id": int(agent_id),
         "score": score,
-        "tag": f"signal_quality_{signal.get('category', 'unknown')}",
+        "tag": f"signal_quality_{category}",
         "timestamp": int(time.time()),
+        "tx_hash": result.tx_hash,
+        "on_chain": result.submitted,
+        "error": result.reason,
     }
+
+    if result.submitted:
+        msg = (
+            f"Reputation ✓ on-chain: {provider.get('name', '?')} → {score}/100 "
+            f"(tx {result.tx_hash[:10]}…)"
+        )
+    else:
+        msg = (
+            f"Reputation (off-chain): {provider.get('name', '?')} → {score}/100 "
+            f"[{result.reason or 'not submitted'}]"
+        )
 
     return {
         **state,
         "reputation_feedback": state["reputation_feedback"] + [feedback],
         "messages": state["messages"] + [
-            {"role": "assistant", "content": (
-                f"Reputation: scored {provider.get('name', '?')} → {score}/100"
-            )}
+            {"role": "assistant", "content": msg}
         ],
     }
 

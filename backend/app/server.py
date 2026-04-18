@@ -47,11 +47,18 @@ app = FastAPI(
     version="0.1.0",
 )
 
+_default_origins = "http://localhost:5173,http://localhost:3000"
+_cors_origins = [
+    o.strip() for o in os.getenv("CORS_ALLOW_ORIGINS", _default_origins).split(",") if o.strip()
+]
+_allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "false").lower() == "true"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    allow_credentials=_allow_credentials,
     expose_headers=["X-Payment-Required", "X-Payment-Confirmed", "X-Payment-Amount"],
 )
 

@@ -69,6 +69,7 @@ contract SignalRegistry {
 
     event ProviderUpdated(uint256 indexed providerId);
     event ProviderDeactivated(uint256 indexed providerId);
+    event ProviderReactivated(uint256 indexed providerId);
     event PriceUpdated(uint256 indexed providerId, uint256 oldPrice, uint256 newPrice);
     event CallsRecorded(uint256 indexed providerId, uint256 newCalls, uint256 totalCalls);
 
@@ -77,6 +78,7 @@ contract SignalRegistry {
     error NotOwner();
     error NotProviderOwner(uint256 providerId);
     error ProviderNotActive(uint256 providerId);
+    error ProviderAlreadyActive(uint256 providerId);
     error AgentAlreadyRegistered(uint256 agentId);
     error NotAgentOwner(uint256 agentId);
     error InvalidPrice();
@@ -161,6 +163,7 @@ contract SignalRegistry {
         uint256 providerId,
         string calldata newEndpoint
     ) external onlyProviderOwner(providerId) {
+        if (!providers[providerId].active) revert ProviderNotActive(providerId);
         if (bytes(newEndpoint).length == 0) revert EmptyEndpoint();
         providers[providerId].endpoint = newEndpoint;
         emit ProviderUpdated(providerId);
@@ -170,6 +173,7 @@ contract SignalRegistry {
         uint256 providerId,
         uint256 newPrice
     ) external onlyProviderOwner(providerId) {
+        if (!providers[providerId].active) revert ProviderNotActive(providerId);
         if (newPrice == 0) revert InvalidPrice();
         uint256 oldPrice = providers[providerId].pricePerCall;
         providers[providerId].pricePerCall = newPrice;
@@ -180,14 +184,31 @@ contract SignalRegistry {
         uint256 providerId,
         string calldata newDescription
     ) external onlyProviderOwner(providerId) {
+        if (!providers[providerId].active) revert ProviderNotActive(providerId);
         providers[providerId].description = newDescription;
         emit ProviderUpdated(providerId);
     }
 
+    /**
+     * @notice Toggle a provider off. The agent's registration stays claimed so
+     *         no other party (or a racing re-registration) can grab the same
+     *         ERC-8004 identity. Use `reactivate()` to resume.
+     */
     function deactivate(uint256 providerId) external onlyProviderOwner(providerId) {
+        if (!providers[providerId].active) revert ProviderNotActive(providerId);
         providers[providerId].active = false;
-        _agentRegistered[providers[providerId].agentId] = false;
         emit ProviderDeactivated(providerId);
+    }
+
+    /**
+     * @notice Re-enable a previously deactivated provider. Owner of the ERC-8004
+     *         agent identity only.
+     */
+    function reactivate(uint256 providerId) external onlyProviderOwner(providerId) {
+        Provider storage p = providers[providerId];
+        if (p.active) revert ProviderAlreadyActive(providerId);
+        p.active = true;
+        emit ProviderReactivated(providerId);
     }
 
     /**
