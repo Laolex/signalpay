@@ -6,11 +6,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/signals": "https://signalpay-production.up.railway.app",
-      "/discovery": "https://signalpay-production.up.railway.app",
-      "/stats": "https://signalpay-production.up.railway.app",
-      "/feed": "https://signalpay-production.up.railway.app",
-      "/agent": "https://signalpay-production.up.railway.app",
+      "/signals": "http://localhost:8000",
+      "/discovery": "http://localhost:8000",
+      "/stats": "http://localhost:8000",
+      "/feed": "http://localhost:8000",
+      "/agent": "http://localhost:8000",
     },
   },
 });

@@ -49,11 +49,11 @@ GATEWAY_WALLET_BATCHED = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9"
 # or when using a 3rd-party facilitator (e.g. OpenZeppelin Relayer).
 NANOPAYMENTS_API_URL = os.getenv(
     "NANOPAYMENTS_API_URL",
-    "https://gateway-api-testnet.circle.com/gateway/v1",
+    "https://gateway-api-testnet.circle.com",
 )
 X402_FACILITATOR_URL = os.getenv("X402_FACILITATOR_URL", "")
-X402_SETTLE_PATH = os.getenv("X402_SETTLE_PATH", "/x402/settle")
-X402_VERIFY_PATH = os.getenv("X402_VERIFY_PATH", "/x402/verify")
+X402_SETTLE_PATH = os.getenv("X402_SETTLE_PATH", "/v1/x402/settle")
+X402_VERIFY_PATH = os.getenv("X402_VERIFY_PATH", "/v1/x402/verify")
 
 # Dev-only escape hatch. MUST be "0" (or unset) in any production deploy.
 # When "1", `validate_payment` returns a simulated receipt if the facilitator

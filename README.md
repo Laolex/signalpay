@@ -2,7 +2,7 @@
 
 > AI agents buy and sell crypto alpha signals via nanopayments on Arc. Sub-cent payments, zero gas, real-time settlement.
 
-Built for the **Nano Payments on Arc** hackathon (May 11–19, 2026).
+Built for the **Circle Arc Hackathon** — Track 4: Best Agentic Economy Experience (July 2026).
 
 ## What It Does
 
@@ -19,6 +19,8 @@ SignalPay is a marketplace where autonomous AI agents pay for data feeds — wha
 8. Repeats — spending $0.10 total across dozens of signal purchases
 
 ## Architecture
+
+![SignalPay Architecture](docs/architecture.svg)
 
 ```
 LangGraph Buyer Agent
@@ -166,6 +168,57 @@ Traditional API monetization uses monthly subscriptions or per-request billing w
 - **Zero gas overhead** — Circle batches settlement, agents pay nothing per tx
 - **Reputation-driven markets** — agents score providers on-chain, bad data = low scores = fewer customers
 - **Autonomous commerce** — no accounts, no credit cards, just signed USDC authorizations
+
+## Buyer Wallet Setup
+
+The buyer agent uses a separate wallet from the signal provider. To run the full end-to-end payment flow:
+
+1. Fund the buyer wallet with testnet USDC at [faucet.circle.com](https://faucet.circle.com)
+2. Set `BUYER_PRIVATE_KEY` and `BUYER_WALLET` in `.env`
+3. The agent signs EIP-3009 authorizations from the buyer wallet to the provider wallet
+
+---
+
+<!-- Circle Product Feedback START -->
+## Circle Product Feedback
+
+### Why We Chose These Products
+
+SignalPay has a fundamental economic constraint: no existing payment infrastructure works at the price points AI agents actually need. Stripe's floor is $0.30 — that's 150x the price of a whale alert signal. We chose Circle's stack because it solves the three problems that make agent-to-agent commerce otherwise impossible:
+
+**Nanopayments + x402** maps perfectly onto how agents interact with APIs. Payment becomes a one-header operation: receive 402, sign EIP-3009, retry with `X-Payment`. No accounts, no subscriptions — the agent does it autonomously. We ran 30+ signal purchases in a single $0.10 budget session.
+
+**USDC** gives agents a stable unit of account for budget reasoning. Volatile gas tokens break the math. USDC at 6-decimal precision lets the agent reason deterministically: "I have $0.10, each signal costs $0.002, I can buy 50 signals."
+
+**Circle Gateway (GatewayWalletBatched)** makes nanopayments economically viable. Without batching, a $0.002 payment with $0.001 gas overhead is a 50% fee. Gateway's off-chain aggregation + batched Arc settlement means infrastructure cost is effectively zero per call.
+
+**Arc Testnet** (chain 5042002) provided ~0.5s finality, dollar-denominated fees, and pre-deployed ERC-8004 registries (Identity, Reputation, Validation) — the agent identity layer we needed without building it ourselves.
+
+### What Worked Well
+
+- **x402 protocol clarity**: HTTP-native design (402 → sign → retry) maps cleanly onto API patterns. Seller middleware in ~300 lines of Python; buyer-side signing in ~60 lines.
+- **EIP-3009 replay protection built in**: The `nonce` field means each authorization settles once — a security property we get from the signature scheme, not something we had to bolt on.
+- **Structured error reasons from the facilitator**: `insufficient_balance`, `invalid_signature`, `self_transfer` are concrete — we knew exactly what was wrong at each debugging step.
+- **LangGraph + SSE for demo clarity**: Streaming the agent's decision loop to the React dashboard makes autonomous commerce tangible — judges watch the agent discover, pay, and receive in real time.
+- **Arc testnet stability**: Stable throughout development, faucet worked reliably, no chain issues.
+
+### What Could Be Improved
+
+- **x402 settle body is non-obvious**: `paymentPayload.accepted` mirrors `paymentRequirements` (redundant), `resource` is required but easy to miss, and authorization numeric fields must be strings despite being integers in EIP-3009. Each took a debug cycle to discover.
+- **No Python x402 client library**: The `@circle-fin/x402-batching` package handles signing and retry in Node/TypeScript. The agentic economy is primarily Python (LangChain, LangGraph, CrewAI, AutoGen). We implemented EIP-712 signing from scratch. A `circle-x402-python` package would dramatically accelerate adoption.
+- **Fragmented developer onboarding**: Protocol spec, facilitator docs, EIP-3009 standard, and Arc config live in different places. A single end-to-end Python + TypeScript quickstart covering seller middleware + buyer client + facilitator would cut setup time by hours.
+- **Gateway wallet registration is opaque**: `wallet_not_found` from the facilitator implies a registration step, but testnet documentation for it was unclear.
+
+### Recommendations
+
+1. **Publish a Python x402 client library** — `pip install circle-x402` with a drop-in `httpx`/`requests` wrapper handling 402 → sign → retry. This unlocks the entire Python AI agent ecosystem.
+2. **Add a `/v1/x402/verify` testnet endpoint** — validate a signed payload without spending funds. Spec exists, testnet endpoint wasn't reachable during development.
+3. **Structured field-level validation errors** — return `{ "validationErrors": [{ "field": "...", "code": "required" }] }` instead of message strings so tooling can parse them.
+4. **Streaming payment primitive** — x402 is request/response (one payment per call). Agentic use cases need per-token, per-second, and per-inference-step streaming. A payment channel or continuous authorization on top of the batch infrastructure would unlock a new category of applications.
+5. **ERC-8004 documentation** — identity and reputation registries are exactly what multi-agent systems need but documentation is sparse. A guide showing register → write → query from another contract would make this much more accessible.
+<!-- Circle Product Feedback END -->
+
+---
 
 ## License
 

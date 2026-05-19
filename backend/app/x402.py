@@ -188,6 +188,7 @@ def _verify_eip712_authorization(
 async def validate_payment(
     payment_header: str,
     requirement: PaymentRequirement,
+    resource_url: str = "",
 ) -> Optional[PaymentReceipt]:
     """
     Validate an x402 payment.
@@ -255,6 +256,7 @@ async def validate_payment(
         signature=signature,
         requirement=requirement,
         verifying_contract=verifying_contract,
+        resource_url=resource_url,
     )
 
     if receipt is None and X402_DEV_MODE:
@@ -288,6 +290,7 @@ async def _settle_with_facilitator(
     signature: str,
     requirement: PaymentRequirement,
     verifying_contract: str,
+    resource_url: str = "",
 ) -> Optional[PaymentReceipt]:
     """Call the x402 facilitator `/settle` endpoint. Never fabricates a receipt."""
     import httpx
@@ -299,29 +302,41 @@ async def _settle_with_facilitator(
     base = (X402_FACILITATOR_URL or NANOPAYMENTS_API_URL).rstrip("/")
     settle_url = f"{base}{X402_SETTLE_PATH}"
 
-    body = {
-        "paymentRequirements": {
-            "scheme": "exact",
-            "network": f"eip155:{ARC.chain_id}",
-            "asset": requirement.token,
-            "amount": str(requirement.price_usdc),
-            "payTo": requirement.recipient,
-            "maxTimeoutSeconds": 432000,
-            "extra": {
-                "name": "GatewayWalletBatched",
-                "version": "1",
-                "verifyingContract": verifying_contract,
-            },
+    payment_requirements = {
+        "scheme": "exact",
+        "network": f"eip155:{ARC.chain_id}",
+        "asset": requirement.token,
+        "amount": str(requirement.price_usdc),
+        "payTo": requirement.recipient,
+        "maxTimeoutSeconds": 432000,
+        "extra": {
+            "name": "GatewayWalletBatched",
+            "version": "1",
+            "verifyingContract": verifying_contract,
         },
-        "payment": {
+    }
+    # Circle requires authorization numeric fields as strings
+    str_auth = {
+        **authorization,
+        "value": str(authorization["value"]),
+        "validAfter": str(authorization.get("validAfter", 0)),
+        "validBefore": str(authorization["validBefore"]),
+    }
+    body = {
+        "paymentPayload": {
             "x402Version": 2,
-            "scheme": "exact",
-            "network": f"eip155:{ARC.chain_id}",
+            "resource": {
+                "url": resource_url or requirement.description,
+                "description": requirement.description,
+                "mimeType": "application/json",
+            },
+            "accepted": payment_requirements,
             "payload": {
-                "authorization": authorization,
+                "authorization": str_auth,
                 "signature": signature,
             },
         },
+        "paymentRequirements": payment_requirements,
     }
 
     headers = {"Content-Type": "application/json"}
@@ -404,7 +419,11 @@ class X402PaymentMiddleware(BaseHTTPMiddleware):
         if not payment_header:
             return build_402_response(requirement)
 
-        receipt = await validate_payment(payment_header, requirement)
+        receipt = await validate_payment(
+            payment_header,
+            requirement,
+            resource_url=str(request.url),
+        )
 
         if not receipt or not receipt.valid:
             return JSONResponse(
