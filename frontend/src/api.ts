@@ -7,4 +7,4 @@ const isProd = import.meta.env.PROD;
 
 export const API_BASE =
   envBase?.trim() ||
-  (isProd ? "https://signalpay-production.up.railway.app" : "");
+  (isProd ? "http://141.227.131.22:8001" : "");
