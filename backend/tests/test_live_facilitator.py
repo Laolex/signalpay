@@ -40,7 +40,7 @@ SETTLE_URL = NANOPAYMENTS_API_URL.rstrip("/") + X402_SETTLE_PATH
 def _build_signed_payment(private_key: str, recipient: str, amount: int = 1000) -> dict:
     acct = Account.from_key(private_key)
     nonce = "0x" + secrets.token_hex(32)
-    valid_before = int(time.time()) + 5 * 24 * 3600  # 5 days
+    valid_before = int(time.time()) + 10 * 24 * 3600  # 10 days (must exceed maxTimeoutSeconds)
 
     authorization = {
         "from": acct.address,

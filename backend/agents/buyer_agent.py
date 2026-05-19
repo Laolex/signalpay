@@ -186,7 +186,7 @@ def pay_and_fetch(state: AgentState) -> AgentState:
             # reused on the buyer side.
             private_key = os.getenv("BUYER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY", "")
             nonce = "0x" + secrets.token_hex(32)
-            valid_before = int(time.time()) + 5 * 24 * 3600  # 5 days (Circle requires > 3 days)
+            valid_before = int(time.time()) + 10 * 24 * 3600  # 10 days (must exceed maxTimeoutSeconds=432000)
 
             try:
                 from eth_account import Account
