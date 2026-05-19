@@ -7,4 +7,4 @@ const isProd = import.meta.env.PROD;
 
 export const API_BASE =
   envBase?.trim() ||
-  (isProd ? "http://141.227.131.22:8001" : "");
+  (isProd ? "https://2a5f7bd25879b8.lhr.life" : "");
