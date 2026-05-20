@@ -121,7 +121,9 @@ def _build_provider_scores(
 ) -> list[ProviderScore]:
     """
     Build a ProviderScore for every affordable provider.
-    Pulls live reputation from ERC-8004 feedback already in state.
+
+    alpha_quality comes from the reputation_store composite_accuracy (GAP 3 —
+    measured hit rate + Sharpe), falling back to ERC-8004 feedback score, then 0.5.
     Category ceiling is the max price in that category (for cost_efficiency).
     """
     if not providers:
@@ -134,12 +136,21 @@ def _build_provider_scores(
         price = p.get("price_usdc", 0.001)
         cat_ceilings[cat] = max(cat_ceilings.get(cat, price), price)
 
-    # Latest ERC-8004 reputation score per provider id
+    # Latest ERC-8004 reputation score per provider id (fallback)
     rep_map: dict[str, float] = {}
     for fb in reputation_feedback:
         pid = fb.get("provider_id", "")
         if pid:
             rep_map[pid] = fb.get("score", 50) / 100.0
+
+    # GAP 3: multi-dimensional accuracy from reputation_store
+    accuracy_map: dict[str, float] = {}
+    try:
+        from app.reputation_store import get_all_metrics
+        for m in get_all_metrics():
+            accuracy_map[m.provider_id] = m.composite_accuracy
+    except Exception:
+        pass  # fail-open — fall back to rep_map
 
     scores: list[ProviderScore] = []
     for p in providers:
@@ -150,11 +161,14 @@ def _build_provider_scores(
         ceiling = cat_ceilings.get(pid, price) or price
         cost_eff = 1.0 - (price / ceiling) if ceiling > 0 else 0.5
 
+        # alpha_quality: measured accuracy > ERC-8004 feedback > default
+        alpha = accuracy_map.get(pid) or rep_map.get(pid, 0.5)
+
         scores.append(ProviderScore(
             provider_id=pid,
             name=p.get("name", pid),
             price_usdc=price,
-            alpha_quality=rep_map.get(pid, 0.5),
+            alpha_quality=alpha,
             cost_efficiency=cost_eff,
             reputation=rep_map.get(pid, 0.5),
             latency=0.8,            # static until latency tracking added (GAP 4)
@@ -428,6 +442,13 @@ def pay_and_fetch(state: AgentState) -> AgentState:
             signal = data.get("signal", {})
             price = provider.get("price_usdc", 0)
 
+            # GAP 3: record prediction for outcome tracking (15-min resolution)
+            try:
+                from app.reputation_store import record_prediction
+                record_prediction(provider.get("id", "unknown"), signal)
+            except Exception:
+                pass  # fail-open — never block signal delivery
+
             return {
                 **state,
                 "signal_data": signal,
@@ -619,9 +640,22 @@ def record_reputation(state: AgentState) -> AgentState:
     if not signal or not provider:
         return state
 
+    # GAP 3: blend measured composite_accuracy with signal confidence for the
+    # ERC-8004 score. When we have resolved history, weight it 60/40 over
+    # self-reported confidence. Falls back to confidence-only if no data yet.
     confidence = float(signal.get("confidence", 0.5))
-    score = int(max(0.0, min(1.0, confidence)) * 100)
     category = signal.get("category", "unknown")
+
+    accuracy_weight = confidence  # default
+    try:
+        from app.reputation_store import get_metrics
+        metrics = get_metrics(provider.get("id", "unknown"))
+        if metrics.resolved_count >= 5:
+            accuracy_weight = (metrics.composite_accuracy * 0.6 + confidence * 0.4)
+    except Exception:
+        pass
+
+    score = int(max(0.0, min(1.0, accuracy_weight)) * 100)
 
     # ERC-8004 agent IDs must be uint256. Provider dicts coming from the
     # discovery API expose a string-ish id — prefer an explicit `agent_id`,

@@ -834,8 +834,25 @@ function SignalExplorer() {
 }
 
 // ── Provider Stats ───────────────────────────────────────────────
+// ── Accuracy colour helper ───────────────────────────────────────
+function accColor(v: number | undefined) {
+  if (v === undefined) return C.muted;
+  if (v >= 0.70) return C.green;
+  if (v >= 0.55) return C.yellow;
+  if (v >= 0.40) return C.orange;
+  return C.red;
+}
+
+function sharpeColor(s: number | undefined) {
+  if (s === undefined) return C.muted;
+  if (s >= 0.5) return C.green;
+  if (s >= 0) return C.yellow;
+  return C.red;
+}
+
 function ProviderDashboard() {
   const [stats, setStats] = useState<{ total_revenue_usdc: number; total_calls: number; recent: any[] } | null>(null);
+  const [repMetrics, setRepMetrics] = useState<Record<string, any>>({});
   const { data: totalOnChain } = useRegistryStats();
   const { providers: chainProviders } = useAllProviders(Number(totalOnChain ?? 0));
 
@@ -843,13 +860,42 @@ function ProviderDashboard() {
     ? chainProviders.map(p => ({ ...p, reputation: 0 }))
     : PROVIDERS_STATIC.map(p => ({ ...p, reputation: 0, categoryName: p.key, priceUSDC: p.price }));
 
-  useEffect(() => {
+  const loadAll = useCallback(() => {
     fetch(`${API_BASE}/stats`).then(r => r.json()).then(setStats).catch(() => {});
+    fetch(`${API_BASE}/reputation`).then(r => r.json()).then((d: any) => {
+      const m: Record<string, any> = {};
+      for (const p of (d.providers ?? [])) m[p.provider_id] = p;
+      setRepMetrics(m);
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadAll();
+    const t = setInterval(loadAll, 120_000);  // refresh every 2 min
+    return () => clearInterval(t);
+  }, [loadAll]);
 
   const totalEarnings = stats?.total_revenue_usdc ?? 0;
   const totalCalls = stats?.total_calls ?? 0;
   const recent = stats?.recent ?? [];
+
+  // Aggregate accuracy stats across all providers with data
+  const metricsArr = Object.values(repMetrics);
+  const trackedProviders = metricsArr.filter((m: any) => m.total_signals > 0);
+  const resolvedTotal = trackedProviders.reduce((s: number, m: any) => s + (m.resolved_count ?? 0), 0);
+  const avgHitRate = trackedProviders.length
+    ? trackedProviders.reduce((s: number, m: any) => s + (m.hit_rate ?? 0.5), 0) / trackedProviders.length
+    : null;
+
+  // Map provider_id → rep metrics key (API uses snake_case provider ids)
+  const repKey: Record<string, string> = {
+    PRICE_ORACLE: "price_oracle",
+    SENTIMENT:    "sentiment",
+    TRADE_SIGNAL: "trade_signal",
+    WHALE_ALERT:  "whale_alert",
+    WALLET_SCORE: "wallet_score",
+    YIELD_INTEL:  "yield_intel",
+  };
 
   return (
     <div style={{ fontFamily: MONO }}>
@@ -857,8 +903,70 @@ function ProviderDashboard() {
         <StatCell label="TOTAL REVENUE"  value={`$${totalEarnings.toFixed(6)}`} color={C.green}  sub="USDC session" />
         <StatCell label="VALIDATED CALLS" value={totalCalls.toLocaleString()}    color={C.cyan}  sub="x402 settled" />
         <StatCell label="PROVIDERS"       value={providers.length}               color={C.orange} sub="registered" />
-        <StatCell label="CHAIN"           value="ARC L1"                         color={C.dim}   sub="5042002" />
+        <StatCell label="AVG HIT RATE"
+          value={avgHitRate !== null ? `${(avgHitRate * 100).toFixed(1)}%` : "—"}
+          color={avgHitRate !== null ? accColor(avgHitRate) : C.muted}
+          sub={resolvedTotal > 0 ? `${resolvedTotal} resolved` : "accumulating"} />
         <div style={{ flex: 1 }} />
+      </Panel>
+
+      {/* Accuracy metrics panel */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{
+          padding: "8px 12px",
+          borderBottom: `1px solid ${C.border}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}>
+          <Label>PREDICTION ACCURACY — MULTI-DIMENSIONAL REPUTATION</Label>
+          <span style={{ color: C.muted, fontSize: 9 }}>15-MIN RESOLUTION · PYTH ORACLE</span>
+        </div>
+        <div style={{
+          display: "grid", gridTemplateColumns: "48px 1fr 70px 70px 70px 70px 70px",
+          padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+        }}>
+          {["TYPE", "PROVIDER", "SIGNALS", "RESOLVED", "HIT RATE", "SHARPE", "ACCURACY"].map(h =>
+            <Label key={h}>{h}</Label>
+          )}
+        </div>
+        {PROVIDERS_STATIC.map((p, i) => {
+          const key = p.key;
+          const color = CAT_COLOR[key] ?? C.text;
+          const tag = CAT_TAG[key] ?? "SIG";
+          const rk = repKey[key];
+          const m = rk ? repMetrics[rk] : undefined;
+          const hasData = m && m.total_signals > 0;
+          return (
+            <div key={p.id} style={{
+              display: "grid", gridTemplateColumns: "48px 1fr 70px 70px 70px 70px 70px",
+              padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
+              background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+            }}>
+              <span style={{ background: color + "22", color, fontSize: 9, fontWeight: 700, padding: "2px 5px" }}>{tag}</span>
+              <span style={{ color: C.text }}>{p.name}</span>
+              <span style={{ color: hasData ? C.cyan : C.muted }}>
+                {hasData ? m.total_signals : "—"}
+              </span>
+              <span style={{ color: hasData && m.resolved_count > 0 ? C.dim : C.muted }}>
+                {hasData && m.resolved_count > 0 ? m.resolved_count : (m?.pending_count > 0 ? `${m.pending_count}⏳` : "—")}
+              </span>
+              <span style={{ color: hasData && m.resolved_count > 0 ? accColor(m.hit_rate) : C.muted, fontWeight: m?.resolved_count >= 5 ? 700 : 400 }}>
+                {hasData && m.resolved_count > 0 ? `${(m.hit_rate * 100).toFixed(1)}%` : "—"}
+              </span>
+              <span style={{ color: hasData && m.resolved_count > 0 ? sharpeColor(m.sharpe_ratio) : C.muted }}>
+                {hasData && m.resolved_count > 0 ? (m.sharpe_ratio >= 0 ? `+${m.sharpe_ratio.toFixed(2)}` : m.sharpe_ratio.toFixed(2)) : "—"}
+              </span>
+              <span style={{ color: hasData ? accColor(m.composite_accuracy) : C.muted, fontWeight: 700 }}>
+                {hasData ? `${(m.composite_accuracy * 100).toFixed(0)}` : "—"}
+                {hasData ? <span style={{ color: C.muted, fontWeight: 400 }}>/100</span> : null}
+              </span>
+            </div>
+          );
+        })}
+        <div style={{ padding: "6px 12px", fontSize: 9, color: C.muted }}>
+          ACCURACY = 40% hit rate + 30% Sharpe contribution + 30% avg confidence · feeds into agent ProviderScore.alpha_quality
+        </div>
       </Panel>
 
       {/* Recent payments */}
@@ -901,10 +1009,10 @@ function ProviderDashboard() {
           <Label>PROVIDER REGISTRY</Label>
         </div>
         <div style={{
-          display: "grid", gridTemplateColumns: "48px 1fr 100px 60px",
+          display: "grid", gridTemplateColumns: "48px 1fr 100px 70px 70px",
           padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
         }}>
-          {["TYPE", "NAME", "PRICE", "REP"].map(h => <Label key={h}>{h}</Label>)}
+          {["TYPE", "NAME", "PRICE", "REP", "ACC"].map(h => <Label key={h}>{h}</Label>)}
         </div>
         {providers.map((p: any, i: number) => {
           const key = p.categoryName ?? p.key ?? "";
@@ -912,9 +1020,11 @@ function ProviderDashboard() {
           const tag = CAT_TAG[key] ?? "SIG";
           const rep = p.reputation ?? 0;
           const repColor = rep >= 90 ? C.green : rep >= 70 ? C.yellow : rep > 0 ? C.red : C.muted;
+          const rk = repKey[key];
+          const m = rk ? repMetrics[rk] : undefined;
           return (
             <div key={p.id} style={{
-              display: "grid", gridTemplateColumns: "48px 1fr 100px 60px",
+              display: "grid", gridTemplateColumns: "48px 1fr 100px 70px 70px",
               padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
               background: i % 2 === 0 ? C.panel : C.row, fontSize: 11,
             }}>
@@ -922,6 +1032,9 @@ function ProviderDashboard() {
               <span style={{ color: C.text }}>{p.name}</span>
               <span style={{ color: C.orange }}>${(p.priceUSDC ?? p.price ?? 0).toFixed(3)}/call</span>
               <span style={{ color: repColor }}>{rep > 0 ? `${rep}/100` : "—"}</span>
+              <span style={{ color: m ? accColor(m.composite_accuracy) : C.muted, fontWeight: 700 }}>
+                {m ? `${(m.composite_accuracy * 100).toFixed(0)}` : "—"}
+              </span>
             </div>
           );
         })}

@@ -134,6 +134,27 @@ async def provider_stats():
     return ledger.stats()
 
 
+@app.get("/reputation")
+async def all_reputation():
+    """Multi-dimensional accuracy metrics for all providers (GAP 3)."""
+    from app.reputation_store import get_all_metrics
+    try:
+        metrics = get_all_metrics()
+        return {"providers": [m.to_dict() for m in metrics]}
+    except Exception as e:
+        return {"providers": [], "error": str(e)}
+
+
+@app.get("/reputation/{provider_id}")
+async def provider_reputation(provider_id: str):
+    """Accuracy metrics for a specific provider — hit rate, Sharpe, composite."""
+    from app.reputation_store import get_metrics
+    try:
+        return get_metrics(provider_id).to_dict()
+    except Exception as e:
+        return {"provider_id": provider_id, "error": str(e)}
+
+
 @app.get("/governance/policy")
 async def governance_policy():
     """Active spend governance policy."""
@@ -512,6 +533,20 @@ async def run_agent_sse(body: AgentRunBody = None):
 
 # ── Startup ─────────────────────────────────────────────────────────
 
+async def _reputation_resolver_loop():
+    """Background task: resolve pending predictions every 15 minutes."""
+    import asyncio
+    from app.reputation_store import resolve_pending_predictions
+    while True:
+        await asyncio.sleep(900)
+        try:
+            resolved = await asyncio.to_thread(resolve_pending_predictions)
+            if resolved:
+                print(f"[reputation] resolved {resolved} pending predictions")
+        except Exception as e:
+            print(f"[reputation] resolver error: {e}")
+
+
 @app.on_event("startup")
 async def startup():
     print("\n══════════════════════════════════════════════")
@@ -522,3 +557,7 @@ async def startup():
     print(f"  x402:     Enabled on /signals/*")
     print(f"  Signals:  {', '.join(PROVIDERS.keys())}")
     print("══════════════════════════════════════════════\n")
+
+    import asyncio
+    asyncio.create_task(_reputation_resolver_loop())
+    print("[reputation] background resolver started (15-min cadence)")
