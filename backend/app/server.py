@@ -88,6 +88,17 @@ async def health():
     }
 
 
+@app.get("/compliance/check/{address}")
+async def compliance_check(address: str):
+    """Compliance screening for a wallet address — risk tier, sanctions, flags."""
+    from app.compliance import check_wallet
+    try:
+        result = check_wallet(address)
+        return result.to_dict()
+    except Exception as e:
+        return {"address": address, "allowed": True, "risk_tier": "unknown", "error": str(e)}
+
+
 @app.get("/discovery/providers")
 async def list_providers():
     """List available signal providers and their pricing."""
@@ -343,6 +354,20 @@ async def run_agent_sse(body: AgentRunBody = None):
             return f"data: {_json.dumps(event)}\n\n"
 
         config = AgentConfig()
+
+        # Compliance pre-check on user wallet before starting session
+        if user_address:
+            try:
+                from app.compliance import check_wallet
+                compliance = check_wallet(user_address)
+                if not compliance.allowed:
+                    yield f"data: {_json.dumps({'action': 'ERROR', 'msg': f'Session blocked: compliance tier={compliance.risk_tier} flags={compliance.flags}'})}\n\n"
+                    yield f"data: {_json.dumps({'action': 'DONE'})}\n\n"
+                    return
+                if compliance.risk_tier in ("medium", "high"):
+                    yield emit("INIT", f"Compliance: {compliance.risk_tier.upper()} risk wallet — monitoring active", None)
+            except Exception:
+                pass  # fail-open
 
         # Derive per-user agent wallet and read real on-chain balance
         agent_budget = config.session_budget

@@ -251,6 +251,18 @@ async def validate_payment(
     if recovered is None or recovered.lower() != from_addr.lower():
         return None
 
+    # ── 3b. Compliance gate ────────────────────────────────────────
+    try:
+        from app.compliance import check_wallet
+        compliance = check_wallet(from_addr)
+        if not compliance.allowed:
+            print(f"[x402] COMPLIANCE BLOCK {from_addr}: {compliance.flags}")
+            return None
+        if compliance.risk_tier == "high":
+            print(f"[x402] COMPLIANCE HIGH-RISK {from_addr}: {compliance.flags} — proceeding with monitoring")
+    except Exception as e:
+        print(f"[x402] compliance check error (fail-open): {e}")
+
     # ── 4. Facilitator settle ──────────────────────────────────────
     receipt = await _settle_with_facilitator(
         authorization=authorization,

@@ -292,8 +292,13 @@ const USDC_ABI = [
 ] as const;
 
 // ── Agent Wallet ─────────────────────────────────────────────────
+const COMPLIANCE_COLORS: Record<string, string> = {
+  low: "#34d399", medium: "#f59e0b", high: "#f97316", blocked: "#ef4444", unknown: "#64748b",
+};
+
 function AgentWallet() {
   const [info, setInfo] = useState<{ address: string | null; balance_usdc: number; funded: boolean } | null>(null);
+  const [compliance, setCompliance] = useState<{ risk_tier: string; risk_score: number; flags: string[]; sanctions_hit: boolean } | null>(null);
   const [amount, setAmount] = useState("0.01");
   const [copied, setCopied] = useState(false);
   const { isConnected, address } = useAccount();
@@ -305,6 +310,15 @@ function AgentWallet() {
     const userParam = address ? `?user=${address}` : "";
     fetch(`${API_BASE}/agent/wallet${userParam}`).then(r => r.json()).then(setInfo).catch(() => {});
   }, [address]);
+
+  const loadCompliance = useCallback(() => {
+    if (!address) return;
+    fetch(`${API_BASE}/compliance/check/${address}`).then(r => r.json()).then(setCompliance).catch(() => {});
+  }, [address]);
+
+  useEffect(() => {
+    loadCompliance();
+  }, [loadCompliance]);
 
   useEffect(() => {
     loadInfo();
@@ -343,9 +357,22 @@ function AgentWallet() {
         display: "flex", alignItems: "center", justifyContent: "space-between",
       }}>
         <Label>AGENT WALLET</Label>
-        <span style={{ fontSize: 9, fontFamily: MONO, color: info?.funded ? C.green : C.yellow }}>
-          {info ? (info.funded ? "FUNDED" : "UNFUNDED") : "..."}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {compliance && (
+            <span style={{
+              fontSize: 8, fontFamily: MONO, fontWeight: 700, letterSpacing: "0.1em",
+              padding: "2px 6px", borderRadius: 2,
+              background: COMPLIANCE_COLORS[compliance.risk_tier] + "22",
+              color: COMPLIANCE_COLORS[compliance.risk_tier],
+              border: `1px solid ${COMPLIANCE_COLORS[compliance.risk_tier]}44`,
+            }}>
+              {compliance.risk_tier.toUpperCase()} RISK
+            </span>
+          )}
+          <span style={{ fontSize: 9, fontFamily: MONO, color: info?.funded ? C.green : C.yellow }}>
+            {info ? (info.funded ? "FUNDED" : "UNFUNDED") : "..."}
+          </span>
+        </div>
       </div>
 
       <div style={{ padding: "8px 12px" }}>
