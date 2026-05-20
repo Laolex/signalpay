@@ -178,6 +178,36 @@ async def economics_sessions(user: str = Query(default="", description="Filter b
         return {"sessions": [], "error": str(e)}
 
 
+@app.get("/positions")
+async def open_positions():
+    """Open simulated positions with unrealized P&L (GAP 7)."""
+    from app.trade_store import get_open_positions
+    try:
+        return {"positions": get_open_positions()}
+    except Exception as e:
+        return {"positions": [], "error": str(e)}
+
+
+@app.get("/positions/history")
+async def position_history(limit: int = Query(default=20, ge=1, le=100)):
+    """Closed position history with realized P&L."""
+    from app.trade_store import get_position_history
+    try:
+        return {"positions": get_position_history(limit=limit)}
+    except Exception as e:
+        return {"positions": [], "error": str(e)}
+
+
+@app.get("/positions/performance")
+async def position_performance():
+    """Trade performance summary — win rate, total P&L, Sharpe."""
+    from app.trade_store import get_performance_summary
+    try:
+        return get_performance_summary()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/governance/policy")
 async def governance_policy():
     """Active spend governance policy."""
@@ -576,6 +606,47 @@ async def _reputation_resolver_loop():
             print(f"[reputation] resolver error: {e}")
 
 
+async def _position_tracker_loop():
+    """Background task: update unrealized P&L for open positions every 5 minutes."""
+    import asyncio
+    import httpx
+    from app.trade_store import get_open_positions, update_unrealized_pnl
+
+    _PYTH_IDS = {
+        "BTC": "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+        "ETH": "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+        "SOL": "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+    }
+
+    while True:
+        await asyncio.sleep(300)
+        try:
+            open_pos = get_open_positions()
+            if not open_pos:
+                continue
+            tokens = set(p["token"] for p in open_pos if p["token"] in _PYTH_IDS)
+            if not tokens:
+                continue
+            ids_qs = "&".join(f"ids[]={_PYTH_IDS[t]}" for t in tokens)
+            async with httpx.AsyncClient(timeout=8) as client:
+                resp = await client.get(
+                    f"https://hermes.pyth.network/v2/updates/price/latest?{ids_qs}",
+                    follow_redirects=True,
+                )
+            id_to_sym = {v.lower().lstrip("0x"): k for k, v in _PYTH_IDS.items()}
+            prices: dict[str, float] = {}
+            for feed in resp.json().get("parsed", []):
+                sym = id_to_sym.get(feed["id"].lower().lstrip("0x"))
+                if sym:
+                    p = feed["price"]
+                    prices[sym] = int(p["price"]) * (10 ** int(p["expo"]))
+            if prices:
+                await asyncio.to_thread(update_unrealized_pnl, prices)
+                print(f"[positions] updated P&L for {len(open_pos)} open positions")
+        except Exception as e:
+            print(f"[positions] tracker error: {e}")
+
+
 @app.on_event("startup")
 async def startup():
     print("\n══════════════════════════════════════════════")
@@ -590,3 +661,5 @@ async def startup():
     import asyncio
     asyncio.create_task(_reputation_resolver_loop())
     print("[reputation] background resolver started (15-min cadence)")
+    asyncio.create_task(_position_tracker_loop())
+    print("[positions] background tracker started (5-min cadence)")

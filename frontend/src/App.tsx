@@ -855,6 +855,9 @@ function ProviderDashboard() {
   const [repMetrics, setRepMetrics] = useState<Record<string, any>>({});
   const [economics, setEconomics]   = useState<any>(null);
   const [sessions, setSessions]     = useState<any[]>([]);
+  const [openPositions, setOpenPositions]   = useState<any[]>([]);
+  const [closedPositions, setClosedPositions] = useState<any[]>([]);
+  const [perfSummary, setPerfSummary]       = useState<any>(null);
   const { data: totalOnChain } = useRegistryStats();
   const { providers: chainProviders } = useAllProviders(Number(totalOnChain ?? 0));
 
@@ -871,6 +874,9 @@ function ProviderDashboard() {
     }).catch(() => {});
     fetch(`${API_BASE}/economics`).then(r => r.json()).then(setEconomics).catch(() => {});
     fetch(`${API_BASE}/economics/sessions?limit=10`).then(r => r.json()).then((d: any) => setSessions(d.sessions ?? [])).catch(() => {});
+    fetch(`${API_BASE}/positions`).then(r => r.json()).then((d: any) => setOpenPositions(d.positions ?? [])).catch(() => {});
+    fetch(`${API_BASE}/positions/history?limit=15`).then(r => r.json()).then((d: any) => setClosedPositions(d.positions ?? [])).catch(() => {});
+    fetch(`${API_BASE}/positions/performance`).then(r => r.json()).then(setPerfSummary).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1085,6 +1091,98 @@ function ProviderDashboard() {
           ACCURACY = 40% hit rate + 30% Sharpe contribution + 30% avg confidence · feeds into agent ProviderScore.alpha_quality
         </div>
       </Panel>
+
+      {/* Trade execution — open positions */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{
+          padding: "8px 12px", borderBottom: `1px solid ${C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <Label>OPEN POSITIONS — SIMULATED PAPER TRADING · $10/TRADE</Label>
+          <div style={{ display: "flex", gap: 16, fontSize: 9, color: C.muted }}>
+            {perfSummary && perfSummary.total_trades > 0 && <>
+              <span>WIN RATE <span style={{ color: accColor(perfSummary.win_rate), fontWeight: 700 }}>{(perfSummary.win_rate * 100).toFixed(0)}%</span></span>
+              <span>TOTAL P&amp;L <span style={{ color: (perfSummary.total_pnl_usdc ?? 0) >= 0 ? C.green : C.red, fontWeight: 700 }}>{(perfSummary.total_pnl_usdc ?? 0) >= 0 ? "+" : ""}${(perfSummary.total_pnl_usdc ?? 0).toFixed(4)}</span></span>
+              <span>SHARPE <span style={{ color: sharpeColor(perfSummary.trade_sharpe), fontWeight: 700 }}>{(perfSummary.trade_sharpe ?? 0) >= 0 ? "+" : ""}{(perfSummary.trade_sharpe ?? 0).toFixed(2)}</span></span>
+            </>}
+          </div>
+        </div>
+        {openPositions.length > 0 && (
+          <>
+            <div style={{
+              display: "grid", gridTemplateColumns: "60px 1fr 110px 110px 80px 80px 60px",
+              padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+            }}>
+              {["TOKEN", "DIRECTION", "ENTRY $", "CURRENT $", "P&L $", "P&L %", "HELD"].map(h => <Label key={h}>{h}</Label>)}
+            </div>
+            {openPositions.map((p: any, i: number) => {
+              const pnlColor = (p.pnl_pct ?? 0) >= 0 ? C.green : C.red;
+              const held = p.duration_s ?? 0;
+              const heldStr = held < 60 ? `${held}s` : held < 3600 ? `${Math.floor(held/60)}m` : `${(held/3600).toFixed(1)}h`;
+              return (
+                <div key={p.id} style={{
+                  display: "grid", gridTemplateColumns: "60px 1fr 110px 110px 80px 80px 60px",
+                  padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
+                  background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+                }}>
+                  <span style={{ color: C.cyan, fontWeight: 700 }}>{p.token}</span>
+                  <span style={{ color: p.direction === "long" ? C.green : C.red }}>
+                    {p.direction === "long" ? "▲ LONG" : "▼ SHORT"} · {p.action_taken}
+                  </span>
+                  <span style={{ color: C.dim }}>${(p.entry_price ?? 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span style={{ color: C.text }}>${(p.exit_price ?? p.entry_price ?? 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  <span style={{ color: pnlColor, fontWeight: 700 }}>{(p.pnl_usdc ?? 0) >= 0 ? "+" : ""}${(p.pnl_usdc ?? 0).toFixed(4)}</span>
+                  <span style={{ color: pnlColor }}>{(p.pnl_pct ?? 0) >= 0 ? "+" : ""}{(p.pnl_pct ?? 0).toFixed(2)}%</span>
+                  <span style={{ color: C.muted }}>{heldStr}</span>
+                </div>
+              );
+            })}
+          </>
+        )}
+        {openPositions.length === 0 && (
+          <div style={{ padding: "20px 12px", color: C.muted, fontSize: 10 }}>
+            No open positions — agent opens a position when it fires BUY or ACCUMULATE
+          </div>
+        )}
+      </Panel>
+
+      {/* Closed positions / P&L history */}
+      {closedPositions.length > 0 && (
+        <Panel style={{ marginBottom: 1 }}>
+          <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+            <Label>CLOSED POSITIONS — REALIZED P&amp;L</Label>
+          </div>
+          <div style={{
+            display: "grid", gridTemplateColumns: "60px 1fr 100px 100px 80px 70px 80px",
+            padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+          }}>
+            {["TOKEN", "ACTION", "ENTRY $", "EXIT $", "P&L $", "P&L %", "HELD"].map(h => <Label key={h}>{h}</Label>)}
+          </div>
+          {closedPositions.map((p: any, i: number) => {
+            const win = (p.pnl_usdc ?? 0) > 0;
+            const pnlColor = win ? C.green : C.red;
+            const held = p.duration_s ?? 0;
+            const heldStr = held < 60 ? `${held}s` : held < 3600 ? `${Math.floor(held/60)}m` : `${(held/3600).toFixed(1)}h`;
+            return (
+              <div key={p.id} style={{
+                display: "grid", gridTemplateColumns: "60px 1fr 100px 100px 80px 70px 80px",
+                padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+                background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+              }}>
+                <span style={{ color: C.cyan, fontWeight: 700 }}>{p.token}</span>
+                <span style={{ color: win ? C.green : C.red, fontSize: 9, fontWeight: 700 }}>
+                  {win ? "✓ WIN" : "✗ LOSS"} · {p.action_taken}
+                </span>
+                <span style={{ color: C.dim }}>${(p.entry_price ?? 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span style={{ color: C.text }}>${(p.exit_price ?? 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                <span style={{ color: pnlColor, fontWeight: 700 }}>{(p.pnl_usdc ?? 0) >= 0 ? "+" : ""}${(p.pnl_usdc ?? 0).toFixed(4)}</span>
+                <span style={{ color: pnlColor }}>{(p.pnl_pct ?? 0) >= 0 ? "+" : ""}{(p.pnl_pct ?? 0).toFixed(2)}%</span>
+                <span style={{ color: C.muted }}>{heldStr}</span>
+              </div>
+            );
+          })}
+        </Panel>
+      )}
 
       {/* Recent payments */}
       <Panel style={{ marginBottom: 1 }}>

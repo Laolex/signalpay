@@ -728,9 +728,9 @@ def execute_action(state: AgentState) -> AgentState:
     """
     Execute the trading decision.
 
-    For BUY/ACCUMULATE: records the intent on-chain via ERC-8004 with a
-    market_decision tag, then logs the concrete action.
-    For SELL/REDUCE: logs the exit signal with governance checkpoint note.
+    For BUY/ACCUMULATE: records the intent on-chain via ERC-8004, then opens a
+    $10 simulated long position in trade_store (GAP 7).
+    For SELL/REDUCE: logs exit signal, closes open positions for the token.
     For HOLD/WATCH: no-op.
     """
     from app.reputation import give_feedback
@@ -750,7 +750,42 @@ def execute_action(state: AgentState) -> AgentState:
     is_buy = any(k in action for k in ("BUY", "ACCUMULATE"))
     is_sell = any(k in action for k in ("SELL", "REDUCE"))
 
-    # Stable agent_id for market-decision records
+    # ── Token + price from collected signals ───────────────────────
+    token = "BTC"
+    entry_price = 0.0
+    conviction  = 0.5
+    signal_ids: list[str] = []
+
+    for s in reversed(signals):
+        cat = s.get("category", "")
+        if cat in ("trade_signal", "price_oracle", "sentiment"):
+            tok = s.get("data", {}).get("token")
+            if tok:
+                token = tok
+                break
+
+    for s in reversed(signals):
+        if s.get("category") == "price_oracle":
+            entry_price = float(s.get("data", {}).get("price_usd", 0.0) or 0.0)
+            break
+
+    for s in reversed(signals):
+        if s.get("category") == "trade_signal":
+            conviction = float(s.get("confidence", 0.5) or 0.5)
+            break
+
+    signal_ids = [s.get("signal_id", "") for s in signals if s.get("signal_id")]
+
+    # Fallback: fetch price from Pyth if no price signal was purchased
+    if entry_price <= 0:
+        try:
+            from providers.signals import generate_price_signal
+            ps = generate_price_signal(token)
+            entry_price = float(ps.data.get("price_usd", 0.0) or 0.0)
+        except Exception:
+            pass
+
+    # ── Stable agent_id for ERC-8004 market-decision records ──────
     decision_agent_id = int(
         hashlib.sha256(b"signalpay_market_decision_v1").hexdigest()[:12], 16
     )
@@ -766,6 +801,49 @@ def execute_action(state: AgentState) -> AgentState:
         endpoint="arc_market",
     )
 
+    # ── GAP 7: open / close simulated position ─────────────────────
+    trade_msg = ""
+    try:
+        from app.trade_store import (
+            open_position,
+            close_open_positions_for_token,
+            POSITION_SIZE_USDC,
+        )
+        session_id   = state.get("session_id", "")
+        user_address = state.get("user_address", "")
+
+        if is_buy and entry_price > 0:
+            pos_id = open_position(
+                session_id=session_id,
+                user_address=user_address,
+                token=token,
+                direction="long",
+                entry_price=entry_price,
+                action_taken=action.split("—")[0].strip().split()[0],
+                conviction=conviction,
+                driving_signals=signal_ids,
+            )
+            trade_msg = (
+                f" | POSITION OPEN: long {token} @ ${entry_price:,.2f} "
+                f"(${POSITION_SIZE_USDC:.0f} simulated, conviction={conviction:.0%})"
+            )
+
+        elif is_sell and entry_price > 0:
+            closed = close_open_positions_for_token(token, entry_price, session_id)
+            if closed:
+                pnl = sum(c["pnl_usdc"] for c in closed)
+                pnl_pct = sum(c["pnl_pct"] for c in closed) / len(closed)
+                sign = "+" if pnl >= 0 else ""
+                trade_msg = (
+                    f" | POSITION CLOSED: {token} @ ${entry_price:,.2f} "
+                    f"P&L {sign}${pnl:.4f} ({sign}{pnl_pct:.2f}%)"
+                )
+            else:
+                trade_msg = f" | No open {token} position to close"
+
+    except Exception as e:
+        trade_msg = f" | [trade_store error: {e}]"
+
     # Build the execution log line
     signals_summary = f"{len(signals)} signals purchased" if signals else "no signals"
     if is_buy:
@@ -775,15 +853,14 @@ def execute_action(state: AgentState) -> AgentState:
             f"Settlement: Circle USDC on Arc"
         )
     else:
-        exec_msg = (
-            f"EXECUTE: {action} | "
-            f"Basis: {signals_summary}"
-        )
+        exec_msg = f"EXECUTE: {action} | Basis: {signals_summary}"
 
     if result.submitted:
         exec_msg += f" | Decision recorded on Arc (tx {result.tx_hash[:10]}…)"
     else:
         exec_msg += f" | Decision logged [{result.reason or 'off-chain'}]"
+
+    exec_msg += trade_msg
 
     return {
         **state,
