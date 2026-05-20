@@ -1258,6 +1258,279 @@ function ProviderDashboard() {
   );
 }
 
+// ── Auction Dashboard (GAP 5) ────────────────────────────────────
+const PROVIDER_IDS = ["price_oracle", "sentiment", "trade_signal", "whale_alert", "wallet_score", "yield_intel"];
+const PROVIDER_LABELS: Record<string, string> = {
+  price_oracle: "Price Oracle", sentiment: "Sentiment Engine",
+  trade_signal: "Trade Signal", whale_alert: "Whale Alert",
+  wallet_score: "Wallet Score", yield_intel: "Yield Intelligence",
+};
+const BASE_PRICES: Record<string, number> = {
+  price_oracle: 0.001, sentiment: 0.003, trade_signal: 0.010,
+  whale_alert: 0.002, wallet_score: 0.005, yield_intel: 0.003,
+};
+
+function timeLeft(expiresAt: number): string {
+  const s = Math.max(0, expiresAt - Math.floor(Date.now() / 1000));
+  if (s >= 60) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+function AuctionDashboard() {
+  const [bids, setBids]       = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const [form, setForm]       = useState({ provider_id: "trade_signal", bid_premium_pct: 20, duration_s: 300 });
+  const [status, setStatus]   = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
+  const [tick, setTick]       = useState(0);
+
+  const loadData = useCallback(() => {
+    fetch(`${API_BASE}/auction/bids`).then(r => r.json()).then((d: any) => setBids(d.bids ?? [])).catch(() => {});
+    fetch(`${API_BASE}/auction/history?limit=15`).then(r => r.json()).then((d: any) => setHistory(d.history ?? [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    const poll = setInterval(loadData, 10_000);
+    const counter = setInterval(() => setTick(t => t + 1), 1000);
+    return () => { clearInterval(poll); clearInterval(counter); };
+  }, [loadData]);
+
+  const submitBid = async () => {
+    setStatus({ type: "loading", msg: "Submitting bid…" });
+    try {
+      const resp = await fetch(`${API_BASE}/auction/bid`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { setStatus({ type: "err", msg: data.error ?? "Failed" }); return; }
+      setStatus({ type: "ok", msg: `Bid placed — ID ${data.bid_id} | +${(data.score_impact * 100).toFixed(1)}% routing score` });
+      loadData();
+    } catch (e) {
+      setStatus({ type: "err", msg: String(e) });
+    }
+  };
+
+  const activeBids   = bids.filter((b: any) => b.seconds_remaining > 0);
+  const topBidder    = activeBids[0];
+  const avgPremium   = activeBids.length
+    ? activeBids.reduce((s: number, b: any) => s + b.bid_premium_pct, 0) / activeBids.length
+    : 0;
+  const totalHistory = history.length;
+
+  // Build a quick map of provider_id → active bid for the provider table
+  const bidByProvider: Record<string, any> = {};
+  for (const b of activeBids) bidByProvider[b.provider_id] = b;
+
+  return (
+    <div style={{ fontFamily: MONO }}>
+      {/* Header stats */}
+      <Panel style={{ display: "flex", marginBottom: 1 }}>
+        <StatCell label="ACTIVE BIDS"  value={activeBids.length}                              color={C.cyan} />
+        <StatCell label="TOP BIDDER"   value={topBidder ? PROVIDER_LABELS[topBidder.provider_id] ?? topBidder.provider_id : "—"} color={C.orange} sub={topBidder ? `+${topBidder.bid_premium_pct}%` : "no bids"} />
+        <StatCell label="AVG PREMIUM"  value={activeBids.length ? `+${avgPremium.toFixed(1)}%` : "—"} color={C.yellow} />
+        <StatCell label="TOTAL PLACED" value={totalHistory}                                    color={C.dim} sub="all time" />
+        <div style={{ flex: 1 }} />
+      </Panel>
+
+      {/* Provider × bid table */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{
+          padding: "8px 12px", borderBottom: `1px solid ${C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <Label>ROUTING AUCTION — LIVE BID STATUS</Label>
+          <span style={{ color: C.muted, fontSize: 9 }}>SCORE IMPACT = bid_premium × 15% · MAX +15pts</span>
+        </div>
+        <div style={{
+          display: "grid", gridTemplateColumns: "48px 1fr 80px 80px 80px 80px 80px",
+          padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+        }}>
+          {["TYPE", "PROVIDER", "BASE $", "PREMIUM", "DYN $", "BOOST", "EXPIRES"].map(h => <Label key={h}>{h}</Label>)}
+        </div>
+        {PROVIDER_IDS.map((pid, i) => {
+          const catKey = pid.toUpperCase();
+          const color  = CAT_COLOR[catKey] ?? C.text;
+          const tag    = CAT_TAG[catKey]   ?? "SIG";
+          const base   = BASE_PRICES[pid] ?? 0.001;
+          const bid    = bidByProvider[pid];
+          return (
+            <div key={pid} style={{
+              display: "grid", gridTemplateColumns: "48px 1fr 80px 80px 80px 80px 80px",
+              padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
+              background: bid ? `${C.orange}0a` : i % 2 === 0 ? C.panel : C.row,
+              fontSize: 10,
+            }}>
+              <span style={{ background: color + "22", color, fontSize: 9, fontWeight: 700, padding: "2px 5px" }}>{tag}</span>
+              <span style={{ color: C.text }}>{PROVIDER_LABELS[pid]}</span>
+              <span style={{ color: C.dim }}>${base.toFixed(3)}</span>
+              {bid ? (
+                <>
+                  <span style={{ color: C.orange, fontWeight: 700 }}>+{bid.bid_premium_pct}%</span>
+                  <span style={{ color: C.yellow }}>${(base * (1 + bid.bid_premium_pct / 100)).toFixed(4)}</span>
+                  <span style={{ color: C.green, fontWeight: 700 }}>+{(bid.score_impact * 100).toFixed(1)}pts</span>
+                  <span style={{ color: bid.seconds_remaining < 60 ? C.red : C.dim }}>
+                    {/* tick forces re-render every second */}
+                    {tick >= 0 && timeLeft(bid.expires_at)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ color: C.muted }}>—</span>
+                  <span style={{ color: C.muted }}>—</span>
+                  <span style={{ color: C.muted }}>—</span>
+                  <span style={{ color: C.muted }}>no bid</span>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </Panel>
+
+      {/* Bid submission form */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+          <Label>PLACE BID — BOOST ROUTING PRIORITY</Label>
+        </div>
+        <div style={{ padding: "14px 12px", display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" as const }}>
+          {/* Provider selector */}
+          <div>
+            <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>PROVIDER</div>
+            <select
+              value={form.provider_id}
+              onChange={e => setForm(f => ({ ...f, provider_id: e.target.value }))}
+              style={{
+                background: C.row, color: C.text, border: `1px solid ${C.border2}`,
+                fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none",
+              }}
+            >
+              {PROVIDER_IDS.map(pid => (
+                <option key={pid} value={pid}>{PROVIDER_LABELS[pid]}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Premium % input */}
+          <div>
+            <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>PREMIUM % (1–50)</div>
+            <input
+              type="number" min={1} max={50} step={1}
+              value={form.bid_premium_pct}
+              onChange={e => setForm(f => ({ ...f, bid_premium_pct: Number(e.target.value) }))}
+              style={{
+                background: C.row, color: C.orange, border: `1px solid ${C.border2}`,
+                fontFamily: MONO, fontSize: 11, fontWeight: 700, padding: "6px 8px",
+                outline: "none", width: 80,
+              }}
+            />
+          </div>
+
+          {/* Duration selector */}
+          <div>
+            <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>DURATION</div>
+            <select
+              value={form.duration_s}
+              onChange={e => setForm(f => ({ ...f, duration_s: Number(e.target.value) }))}
+              style={{
+                background: C.row, color: C.text, border: `1px solid ${C.border2}`,
+                fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none",
+              }}
+            >
+              <option value={60}>1 min</option>
+              <option value={300}>5 min</option>
+              <option value={600}>10 min</option>
+              <option value={1800}>30 min</option>
+              <option value={3600}>1 hour</option>
+            </select>
+          </div>
+
+          {/* Score preview */}
+          <div style={{ padding: "6px 0" }}>
+            <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>SCORE IMPACT</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.green }}>
+              +{(Math.min(form.bid_premium_pct / 100, 0.5) * 15).toFixed(1)}pts
+            </div>
+          </div>
+
+          {/* Dynamic price preview */}
+          <div style={{ padding: "6px 0" }}>
+            <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>BUYER PAYS</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.yellow }}>
+              ${((BASE_PRICES[form.provider_id] ?? 0.001) * (1 + form.bid_premium_pct / 100)).toFixed(4)}
+            </div>
+          </div>
+
+          <button
+            onClick={submitBid}
+            disabled={status?.type === "loading"}
+            style={{
+              background: status?.type === "loading" ? C.border : C.orange,
+              color: status?.type === "loading" ? C.dim : "#000",
+              border: "none", padding: "8px 18px", cursor: status?.type === "loading" ? "default" : "pointer",
+              fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+              transition: "background 0.15s", alignSelf: "flex-end",
+            }}
+          >
+            {status?.type === "loading" ? "PLACING…" : "PLACE BID"}
+          </button>
+        </div>
+
+        {status && status.type !== "loading" && (
+          <div style={{
+            padding: "8px 12px", borderTop: `1px solid ${C.border}`,
+            color: status.type === "ok" ? C.green : C.red, fontSize: 10,
+          }}>
+            {status.type === "ok" ? "✓ " : "✗ "}{status.msg}
+          </div>
+        )}
+      </Panel>
+
+      {/* Bid history */}
+      <Panel>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+          <Label>BID HISTORY</Label>
+        </div>
+        <div style={{
+          display: "grid", gridTemplateColumns: "48px 1fr 80px 60px 80px 70px",
+          padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+        }}>
+          {["TYPE", "PROVIDER", "PREMIUM", "BOOST", "PLACED", "STATUS"].map(h => <Label key={h}>{h}</Label>)}
+        </div>
+        {history.length === 0 && (
+          <div style={{ padding: "20px 12px", color: C.muted, fontSize: 10 }}>
+            No bids placed yet — use the form above to place your first bid
+          </div>
+        )}
+        {history.map((b: any, i: number) => {
+          const catKey = (b.provider_id ?? "").toUpperCase();
+          const color  = CAT_COLOR[catKey] ?? C.text;
+          const tag    = CAT_TAG[catKey]   ?? "SIG";
+          const isActive = b.active && b.seconds_remaining > 0;
+          return (
+            <div key={b.bid_id} style={{
+              display: "grid", gridTemplateColumns: "48px 1fr 80px 60px 80px 70px",
+              padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+              background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+            }}>
+              <span style={{ background: color + "22", color, fontSize: 9, fontWeight: 700, padding: "2px 5px" }}>{tag}</span>
+              <span style={{ color: C.text }}>{PROVIDER_LABELS[b.provider_id] ?? b.provider_id}</span>
+              <span style={{ color: C.orange, fontWeight: 700 }}>+{b.bid_premium_pct}%</span>
+              <span style={{ color: C.green }}>+{((b.score_impact ?? 0) * 100).toFixed(1)}pts</span>
+              <span style={{ color: C.muted }}>
+                {b.placed_at ? new Date(b.placed_at * 1000).toLocaleTimeString("en", { hour12: false }) : "—"}
+              </span>
+              <span style={{ color: isActive ? C.green : C.muted, fontSize: 9 }}>
+                {isActive ? "ACTIVE" : "EXPIRED"}
+              </span>
+            </div>
+          );
+        })}
+      </Panel>
+    </div>
+  );
+}
+
 // ── Treasury Dashboard (GAP 8) ───────────────────────────────────
 function TreasuryDashboard() {
   const [treasury, setTreasury] = useState<any>(null);
@@ -1611,6 +1884,7 @@ export default function SignalPayApp() {
   const TABS = [
     { id: "agent",    label: "TERMINAL" },
     { id: "explore",  label: "MARKET" },
+    { id: "auction",  label: "AUCTION" },
     { id: "provider", label: "POSITIONS" },
     { id: "treasury", label: "TREASURY" },
     { id: "faucet",   label: "NETWORK" },
@@ -1670,6 +1944,7 @@ export default function SignalPayApp() {
       <div style={tab === "agent" ? {} : { padding: tab === "arch" ? 0 : 16, maxWidth: tab === "arch" ? "none" : 1100, margin: "0 auto" }}>
         {tab === "agent"    && <AgentConsole signals={signals} onSignal={onSignal} />}
         {tab === "explore"  && <SignalExplorer />}
+        {tab === "auction"  && <AuctionDashboard />}
         {tab === "provider" && <ProviderDashboard />}
         {tab === "treasury" && <TreasuryDashboard />}
         {tab === "faucet"   && <Network />}

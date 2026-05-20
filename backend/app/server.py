@@ -208,6 +208,54 @@ async def position_performance():
         return {"error": str(e)}
 
 
+class BidRequest(BaseModel):
+    provider_id: str
+    bid_premium_pct: float   # 1.0 – 50.0
+    duration_s: int = 300    # TTL seconds (60 – 3600)
+
+
+@app.post("/auction/bid")
+async def place_auction_bid(body: BidRequest):
+    """Submit a routing-priority bid for a provider (GAP 5)."""
+    from app.auction_store import place_bid as _place_bid
+    from fastapi.responses import JSONResponse as _JSONResponse
+    if not (1.0 <= body.bid_premium_pct <= 50.0):
+        return _JSONResponse(status_code=400, content={"error": "bid_premium_pct must be 1–50"})
+    if not (60 <= body.duration_s <= 3600):
+        return _JSONResponse(status_code=400, content={"error": "duration_s must be 60–3600"})
+    bid_id = _place_bid(body.provider_id, body.bid_premium_pct, body.duration_s)
+    priority_boost = round(min(body.bid_premium_pct / 100, 0.50), 4)
+    score_impact   = round(min(priority_boost * 0.15, 0.15), 4)
+    return {
+        "bid_id":          bid_id,
+        "provider_id":     body.provider_id,
+        "bid_premium_pct": body.bid_premium_pct,
+        "priority_boost":  priority_boost,
+        "score_impact":    score_impact,
+        "duration_s":      body.duration_s,
+        "dynamic_price_usdc": round(
+            DEFAULT_PRICES.get(body.provider_id, 1000) / 1_000_000
+            * (1 + body.bid_premium_pct / 100), 6
+        ),
+    }
+
+
+@app.get("/auction/bids")
+async def active_auction_bids():
+    """List all currently active provider bids (GAP 5)."""
+    from app.auction_store import get_active_bids, expire_old_bids
+    expire_old_bids()
+    bids = get_active_bids()
+    return {"bids": [b.to_dict() for b in bids], "count": len(bids)}
+
+
+@app.get("/auction/history")
+async def auction_history(limit: int = Query(default=20, ge=1, le=100)):
+    """Recent bid history — active and expired."""
+    from app.auction_store import get_bid_history
+    return {"history": get_bid_history(limit=limit)}
+
+
 @app.get("/treasury")
 async def treasury_summary():
     """Unified treasury: revenue, spend, net P&L, 14-day cashflow, governance state."""

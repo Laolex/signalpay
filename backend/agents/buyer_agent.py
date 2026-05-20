@@ -152,6 +152,16 @@ def _build_provider_scores(
     except Exception:
         pass  # fail-open — fall back to rep_map
 
+    # GAP 5: load active auction bids once for this scoring pass
+    bid_map: dict[str, any] = {}
+    try:
+        from app.auction_store import get_active_bids, expire_old_bids
+        expire_old_bids()
+        for b in get_active_bids():
+            bid_map[b.provider_id] = b
+    except Exception:
+        pass  # fail-open — no auction data means no boost
+
     scores: list[ProviderScore] = []
     for p in providers:
         price = p.get("price_usdc", 0.001)
@@ -164,6 +174,11 @@ def _build_provider_scores(
         # alpha_quality: measured accuracy > ERC-8004 feedback > default
         alpha = accuracy_map.get(pid) or rep_map.get(pid, 0.5)
 
+        # GAP 5: auction bid → priority_boost + dynamic_price
+        bid = bid_map.get(pid)
+        bid_premium  = bid.priority_boost   if bid else 0.0
+        dynamic_price = round(price * (1 + bid.bid_premium_pct / 100), 6) if bid else 0.0
+
         scores.append(ProviderScore(
             provider_id=pid,
             name=p.get("name", pid),
@@ -171,8 +186,10 @@ def _build_provider_scores(
             alpha_quality=alpha,
             cost_efficiency=cost_eff,
             reputation=rep_map.get(pid, 0.5),
-            latency=0.8,            # static until latency tracking added (GAP 4)
-            # GAP 5/6/10 stubs — all zero, activate later
+            latency=0.8,
+            bid_premium=bid_premium,
+            dynamic_price=dynamic_price,
+            # GAP 6/10 stubs remain zero
         ))
 
     scores.sort(key=lambda s: s.composite, reverse=True)
