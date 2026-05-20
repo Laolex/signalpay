@@ -484,6 +484,16 @@ class X402PaymentMiddleware(BaseHTTPMiddleware):
 
         record_spend(price)
         ledger.record(receipt)
+        try:
+            from app.economic_memory import record_revenue
+            record_revenue(
+                payer=receipt.payer,
+                amount_usdc=receipt.amount / 1_000_000,
+                payment_id=receipt.payment_id,
+                endpoint=request.url.path,
+            )
+        except Exception:
+            pass
         request.state.payment_receipt = receipt
 
         response = await call_next(request)

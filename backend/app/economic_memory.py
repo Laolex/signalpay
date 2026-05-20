@@ -78,6 +78,18 @@ def _init_db():
         c.execute("CREATE INDEX IF NOT EXISTS idx_spend_provider ON spend_log(provider_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_address)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at)")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS revenue_log (
+                id          TEXT PRIMARY KEY,
+                payer       TEXT NOT NULL DEFAULT '',
+                amount_usdc REAL NOT NULL,
+                payment_id  TEXT NOT NULL DEFAULT '',
+                endpoint    TEXT NOT NULL DEFAULT '',
+                received_at INTEGER NOT NULL
+            )
+        """)
+        c.execute("CREATE INDEX IF NOT EXISTS idx_revenue_day ON revenue_log(received_at)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_revenue_endpoint ON revenue_log(endpoint)")
 
 
 _init_db()
@@ -277,6 +289,99 @@ def get_session_history(user_address: Optional[str] = None, limit: int = 20) -> 
         }
         for r in rows
     ]
+
+
+def record_revenue(
+    payer: str,
+    amount_usdc: float,
+    payment_id: str,
+    endpoint: str,
+):
+    """Record a confirmed x402 settlement as treasury revenue."""
+    now = int(time.time())
+    entry_id = hashlib.sha256(
+        f"{payment_id}:{now}".encode()
+    ).hexdigest()[:20]
+
+    with _lock:
+        with _conn() as c:
+            c.execute("""
+                INSERT OR IGNORE INTO revenue_log
+                (id, payer, amount_usdc, payment_id, endpoint, received_at)
+                VALUES (?,?,?,?,?,?)
+            """, (entry_id, payer.lower(), amount_usdc, payment_id, endpoint, now))
+
+
+def get_treasury_summary() -> dict:
+    """Unified treasury view: revenue + spend + net + 14-day cashflow + by-endpoint breakdown."""
+    with _conn() as c:
+        rev = c.execute("""
+            SELECT COUNT(*) as calls, SUM(amount_usdc) as total
+            FROM revenue_log
+        """).fetchone()
+
+        spd = c.execute("""
+            SELECT COUNT(*) as calls, SUM(cost_usdc) as total
+            FROM spend_log
+        """).fetchone()
+
+        daily_rev = c.execute("""
+            SELECT date(received_at, 'unixepoch') as day,
+                   SUM(amount_usdc) as revenue, COUNT(*) as calls
+            FROM revenue_log
+            GROUP BY day ORDER BY day DESC LIMIT 14
+        """).fetchall()
+
+        daily_spd = c.execute("""
+            SELECT date(purchased_at, 'unixepoch') as day,
+                   SUM(cost_usdc) as spend, COUNT(*) as calls
+            FROM spend_log
+            GROUP BY day ORDER BY day DESC LIMIT 14
+        """).fetchall()
+
+        by_endpoint = c.execute("""
+            SELECT endpoint, COUNT(*) as calls,
+                   SUM(amount_usdc) as total_revenue,
+                   AVG(amount_usdc) as avg_revenue
+            FROM revenue_log
+            GROUP BY endpoint ORDER BY total_revenue DESC
+        """).fetchall()
+
+    total_revenue = float(rev["total"] or 0)
+    total_spend   = float(spd["total"] or 0)
+
+    rev_by_day   = {r["day"]: {"revenue": float(r["revenue"]), "rc": int(r["calls"])} for r in daily_rev}
+    spend_by_day = {r["day"]: {"spend":   float(r["spend"]),   "sc": int(r["calls"])} for r in daily_spd}
+    all_days = sorted(set(list(rev_by_day) + list(spend_by_day)), reverse=True)[:14]
+
+    daily_flow = []
+    for day in all_days:
+        rv = rev_by_day.get(day,   {"revenue": 0.0, "rc": 0})
+        sp = spend_by_day.get(day, {"spend":   0.0, "sc": 0})
+        daily_flow.append({
+            "day":         day,
+            "revenue":     round(rv["revenue"], 6),
+            "spend":       round(sp["spend"],   6),
+            "net":         round(rv["revenue"] - sp["spend"], 6),
+            "rev_calls":   rv["rc"],
+            "spend_calls": sp["sc"],
+        })
+
+    return {
+        "revenue":     {"total": round(total_revenue, 6), "calls": int(rev["calls"] or 0)},
+        "spend":       {"total": round(total_spend,   6), "calls": int(spd["calls"] or 0)},
+        "net":          round(total_revenue - total_spend, 6),
+        "daily_flow":   daily_flow,
+        "by_endpoint":  [
+            {
+                "endpoint":      r["endpoint"],
+                "calls":         int(r["calls"]),
+                "total_revenue": round(float(r["total_revenue"]), 6),
+                "avg_revenue":   round(float(r["avg_revenue"]),   6),
+            }
+            for r in by_endpoint
+        ],
+    }
 
 
 def get_provider_economics() -> list[dict]:

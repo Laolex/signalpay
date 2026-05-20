@@ -208,6 +208,30 @@ async def position_performance():
         return {"error": str(e)}
 
 
+@app.get("/treasury")
+async def treasury_summary():
+    """Unified treasury: revenue, spend, net P&L, 14-day cashflow, governance state."""
+    from app.economic_memory import get_treasury_summary
+    from app.trade_store import get_performance_summary
+    try:
+        data = get_treasury_summary()
+        try:
+            data["trade_performance"] = get_performance_summary()
+        except Exception:
+            data["trade_performance"] = {}
+        policy = GovernancePolicy.from_env()
+        spent = daily_spent()
+        data["governance"] = {
+            "policy": policy.as_display(),
+            "today_spent_usdc":     spent / 1_000_000,
+            "today_remaining_usdc": daily_remaining(policy) / 1_000_000,
+        }
+        data["provider_wallet"] = PROVIDER_WALLET
+        return data
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/governance/policy")
 async def governance_policy():
     """Active spend governance policy."""

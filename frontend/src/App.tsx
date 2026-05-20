@@ -1258,6 +1258,147 @@ function ProviderDashboard() {
   );
 }
 
+// ── Treasury Dashboard (GAP 8) ───────────────────────────────────
+function TreasuryDashboard() {
+  const [treasury, setTreasury] = useState<any>(null);
+
+  const load = useCallback(() => {
+    fetch(`${API_BASE}/treasury`).then(r => r.json()).then(setTreasury).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  if (!treasury) return (
+    <div style={{ padding: 60, color: C.muted, fontFamily: MONO, fontSize: 11, textAlign: "center" }}>
+      LOADING TREASURY DATA...
+    </div>
+  );
+
+  const rev      = treasury.revenue ?? {};
+  const spd      = treasury.spend ?? {};
+  const net      = treasury.net ?? 0;
+  const tradePnl = treasury.trade_performance?.total_pnl_usdc ?? 0;
+  const dailyFlow    = treasury.daily_flow ?? [];
+  const byEndpoint   = treasury.by_endpoint ?? [];
+  const gov    = treasury.governance ?? {};
+  const policy = gov.policy ?? {};
+
+  const maxBar = Math.max(...dailyFlow.map((d: any) => Math.max(d.revenue, d.spend, 0.000001)));
+
+  return (
+    <div style={{ fontFamily: MONO }}>
+      {/* 5-stat header */}
+      <Panel style={{ display: "flex", marginBottom: 1 }}>
+        <StatCell label="REVENUE"    value={`$${(rev.total ?? 0).toFixed(6)}`}   color={C.green}  sub={`${rev.calls ?? 0} settlements`} />
+        <StatCell label="SPEND"      value={`$${(spd.total ?? 0).toFixed(6)}`}   color={C.orange} sub={`${spd.calls ?? 0} signals`} />
+        <StatCell label="NET"        value={`${net >= 0 ? "+" : "−"}$${Math.abs(net).toFixed(6)}`} color={net >= 0 ? C.green : C.red} sub="revenue − spend" />
+        <StatCell label="TRADE P&L"  value={`${tradePnl >= 0 ? "+" : "−"}$${Math.abs(tradePnl).toFixed(4)}`} color={tradePnl >= 0 ? C.green : C.red} sub="simulated" />
+        <StatCell label="DAILY BURN" value={`$${(gov.today_spent_usdc ?? 0).toFixed(4)}`} color={C.yellow} sub={`$${(gov.today_remaining_usdc ?? 0).toFixed(2)} left`} />
+        <div style={{ flex: 1 }} />
+      </Panel>
+
+      {/* 14-day cashflow chart */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{
+          padding: "8px 12px", borderBottom: `1px solid ${C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <Label>14-DAY CASHFLOW — REVENUE vs SPEND</Label>
+          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+            <span style={{ color: C.green,  fontSize: 9 }}>▓ REVENUE</span>
+            <span style={{ color: C.orange, fontSize: 9 }}>▓ SPEND</span>
+          </div>
+        </div>
+        {dailyFlow.length === 0 ? (
+          <div style={{ padding: "24px 12px", color: C.muted, fontSize: 10 }}>
+            No cashflow data yet — run the agent to populate
+          </div>
+        ) : (
+          <div style={{ padding: "12px 12px 8px", overflowX: "auto" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 96 }}>
+              {[...dailyFlow].reverse().map((d: any) => (
+                <div key={d.day} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", minWidth: 28 }}>
+                  <div style={{ display: "flex", gap: 2, alignItems: "flex-end", height: 76, width: "100%", justifyContent: "center" }}>
+                    <div style={{
+                      width: 8, background: C.green, opacity: 0.8,
+                      height: `${Math.max(2, (d.revenue / maxBar) * 100)}%`,
+                    }} />
+                    <div style={{
+                      width: 8, background: C.orange, opacity: 0.8,
+                      height: `${Math.max(2, (d.spend / maxBar) * 100)}%`,
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 7, color: C.muted, marginTop: 3, whiteSpace: "nowrap" as const }}>
+                    {d.day.slice(5)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Panel>
+
+      {/* Revenue by endpoint */}
+      {byEndpoint.length > 0 && (
+        <Panel style={{ marginBottom: 1 }}>
+          <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+            <Label>REVENUE BY ENDPOINT</Label>
+          </div>
+          <div style={{
+            display: "grid", gridTemplateColumns: "1fr 70px 110px 90px",
+            padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+          }}>
+            {["ENDPOINT", "CALLS", "TOTAL", "AVG"].map(h => <Label key={h}>{h}</Label>)}
+          </div>
+          {byEndpoint.map((e: any, i: number) => (
+            <div key={e.endpoint} style={{
+              display: "grid", gridTemplateColumns: "1fr 70px 110px 90px",
+              padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+              background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+            }}>
+              <span style={{ color: C.cyan }}>{e.endpoint}</span>
+              <span style={{ color: C.dim }}>{e.calls}</span>
+              <span style={{ color: C.green, fontWeight: 700 }}>${e.total_revenue.toFixed(6)}</span>
+              <span style={{ color: C.muted }}>${e.avg_revenue.toFixed(6)}</span>
+            </div>
+          ))}
+        </Panel>
+      )}
+
+      {/* Governance policy card */}
+      <Panel>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+          <Label>GOVERNANCE POLICY</Label>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap" as const }}>
+          {[
+            { k: "MAX/CALL",    v: `$${policy.max_per_call_usdc?.toFixed(4) ?? "—"}`,          c: C.text },
+            { k: "DAILY CAP",   v: `$${policy.daily_budget_usdc?.toFixed(2) ?? "—"}`,           c: C.text },
+            { k: "HUMAN GATE",  v: `>$${policy.require_human_above_usdc?.toFixed(4) ?? "—"}`,   c: C.yellow },
+            { k: "WHITELIST",   v: policy.whitelist?.[0] === "*" ? "OPEN" : `${policy.whitelist?.length ?? 0} addr`, c: C.green },
+            { k: "TODAY USED",  v: `$${(gov.today_spent_usdc ?? 0).toFixed(4)}`,                c: C.orange },
+            { k: "REMAINING",   v: `$${(gov.today_remaining_usdc ?? 0).toFixed(4)}`,            c: C.cyan },
+            { k: "PROVIDER",    v: treasury.provider_wallet ? `${treasury.provider_wallet.slice(0, 8)}…` : "—", c: C.dim },
+          ].map(({ k, v, c }) => (
+            <div key={k} style={{
+              padding: "10px 18px",
+              borderRight: `1px solid ${C.border}`,
+              borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>{k}</div>
+              <div style={{ fontSize: 14, color: c, fontWeight: 700 }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 // ── Network / Faucet ─────────────────────────────────────────────
 function Network() {
   const [wallet, setWallet] = useState("");
@@ -1471,6 +1612,7 @@ export default function SignalPayApp() {
     { id: "agent",    label: "TERMINAL" },
     { id: "explore",  label: "MARKET" },
     { id: "provider", label: "POSITIONS" },
+    { id: "treasury", label: "TREASURY" },
     { id: "faucet",   label: "NETWORK" },
     { id: "arch",     label: "ARCHITECTURE" },
   ];
@@ -1529,6 +1671,7 @@ export default function SignalPayApp() {
         {tab === "agent"    && <AgentConsole signals={signals} onSignal={onSignal} />}
         {tab === "explore"  && <SignalExplorer />}
         {tab === "provider" && <ProviderDashboard />}
+        {tab === "treasury" && <TreasuryDashboard />}
         {tab === "faucet"   && <Network />}
         {tab === "arch"     && <SignalPayDiagram />}
       </div>
