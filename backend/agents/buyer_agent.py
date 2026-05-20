@@ -22,10 +22,147 @@ import secrets
 import time
 import hashlib
 from typing import TypedDict, Annotated, Literal
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from langgraph.graph import StateGraph, END
 from langgraph.graph.message import add_messages
+
+
+# ── Provider Scoring Engine ─────────────────────────────────────────
+#
+# Single source of truth for how the agent ranks providers.
+# All GAP extension points are stubbed here — populating a field
+# activates it in the composite score automatically.
+#
+# GAP 1  (active)  — alpha_quality, cost_efficiency, reputation, latency
+# GAP 5  (stub)    — bid_premium, dynamic_price  → auction/dynamic pricing
+# GAP 6  (stub)    — chain_id, bridge_cost_usdc  → crosschain routing
+# GAP 10 (stub)    — stake_amount_usdc, slash_count → staking/slashing
+
+@dataclass
+class ProviderScore:
+    provider_id: str
+    name: str
+    price_usdc: float
+
+    # ── GAP 1: Core quality signals (active) ──────────────────────
+    alpha_quality: float = 0.5      # signal confidence from last known call, 0–1
+    cost_efficiency: float = 0.5    # 1 - (price / category_ceiling), 0–1
+    reputation: float = 0.5         # ERC-8004 on-chain score / 100, 0–1
+    latency: float = 0.8            # 1 - (response_ms / 5000), clamped 0–1
+
+    # ── GAP 5: Auction / dynamic pricing (stub) ───────────────────
+    # Providers submit bids when a signal is requested.
+    # bid_premium > 0 means provider paid for routing priority.
+    # dynamic_price overrides price_usdc when set by the auction layer.
+    bid_premium: float = 0.0
+    dynamic_price: float = 0.0
+
+    # ── GAP 6: Crosschain routing (stub) ──────────────────────────
+    # Agent will score settlement chains (Arc, Base, Solana) and route
+    # to the one offering best cost + latency + liquidity depth.
+    # bridge_cost_usdc penalises cross-chain providers.
+    chain_id: int = 5042002         # Arc testnet default
+    bridge_cost_usdc: float = 0.0
+    chain_latency_ms: float = 0.0
+
+    # ── GAP 10: Staking / slashing (stub) ─────────────────────────
+    # Providers bond collateral. Stakers get routing preference.
+    # Each slash event decays the score permanently (5% per event).
+    stake_amount_usdc: float = 0.0
+    slash_count: int = 0
+
+    @property
+    def composite(self) -> float:
+        """
+        Weighted composite score, 0–1. Higher = preferred routing target.
+
+        Weights (GAP 1, active):
+          alpha_quality   45% — does this provider deliver useful signal?
+          cost_efficiency 25% — how cheap relative to category peers?
+          latency         20% — how fast is it?
+          reputation      10% — on-chain ERC-8004 track record
+
+        Modifiers (stubbed, activate by populating fields):
+          GAP 5: +bid_premium bonus (max +15%)
+          GAP 6: -bridge_cost penalty (max -20%)
+          GAP 10: +stake_bonus (max +10%), -slash_penalty (5% per slash)
+        """
+        base = (
+            self.alpha_quality   * 0.45 +
+            self.cost_efficiency * 0.25 +
+            self.latency         * 0.20 +
+            self.reputation      * 0.10
+        )
+        # GAP 5
+        auction_boost  = min(self.bid_premium * 0.15, 0.15)
+        # GAP 6
+        chain_penalty  = min(self.bridge_cost_usdc / 0.01, 0.20)
+        # GAP 10
+        stake_boost    = min(self.stake_amount_usdc / 100.0, 0.10)
+        slash_penalty  = min(self.slash_count * 0.05, 0.25)
+
+        return max(0.0, min(1.0,
+            base + auction_boost - chain_penalty + stake_boost - slash_penalty
+        ))
+
+    def explain(self) -> str:
+        return (
+            f"score={self.composite:.3f} "
+            f"[α={self.alpha_quality:.2f} cost={self.cost_efficiency:.2f} "
+            f"rep={self.reputation:.2f} lat={self.latency:.2f}]"
+        )
+
+
+def _build_provider_scores(
+    providers: list[dict],
+    reputation_feedback: list[dict],
+    budget: float,
+) -> list[ProviderScore]:
+    """
+    Build a ProviderScore for every affordable provider.
+    Pulls live reputation from ERC-8004 feedback already in state.
+    Category ceiling is the max price in that category (for cost_efficiency).
+    """
+    if not providers:
+        return []
+
+    # Category price ceilings for cost_efficiency normalisation
+    cat_ceilings: dict[str, float] = {}
+    for p in providers:
+        cat = p.get("id", "")
+        price = p.get("price_usdc", 0.001)
+        cat_ceilings[cat] = max(cat_ceilings.get(cat, price), price)
+
+    # Latest ERC-8004 reputation score per provider id
+    rep_map: dict[str, float] = {}
+    for fb in reputation_feedback:
+        pid = fb.get("provider_id", "")
+        if pid:
+            rep_map[pid] = fb.get("score", 50) / 100.0
+
+    scores: list[ProviderScore] = []
+    for p in providers:
+        price = p.get("price_usdc", 0.001)
+        if price > budget:
+            continue
+        pid = p.get("id", "")
+        ceiling = cat_ceilings.get(pid, price) or price
+        cost_eff = 1.0 - (price / ceiling) if ceiling > 0 else 0.5
+
+        scores.append(ProviderScore(
+            provider_id=pid,
+            name=p.get("name", pid),
+            price_usdc=price,
+            alpha_quality=rep_map.get(pid, 0.5),
+            cost_efficiency=cost_eff,
+            reputation=rep_map.get(pid, 0.5),
+            latency=0.8,            # static until latency tracking added (GAP 4)
+            # GAP 5/6/10 stubs — all zero, activate later
+        ))
+
+    scores.sort(key=lambda s: s.composite, reverse=True)
+    return scores
 
 
 # ── Agent State ─────────────────────────────────────────────────────
@@ -94,37 +231,27 @@ def discover_providers(state: AgentState) -> AgentState:
 
 def select_provider(state: AgentState) -> AgentState:
     """
-    Select the best provider based on category need, price, and reputation.
+    Score-driven provider selection.
 
-    Strategy:
-    - Iteration 0: price_oracle (base context)
-    - Iteration 1: sentiment (F&G + community vote)
-    - Iteration 2: trade_signal (composite BUY/SELL/HOLD — derived from above)
-    - Iteration 3: whale_alert (on-chain confirmation)
-    - Iteration 4+: cycle cheapest available
+    Phase 1 (iterations 0-4): warm-start — prefer the category that builds
+    the best analytical context in sequence (price → sentiment → trade →
+    whale → wallet). Within the preferred category, the highest composite
+    score wins. If the preferred category is over budget or already scored,
+    fall through to score-ranked open selection.
+
+    Phase 2 (iteration 5+): pure score routing — highest ProviderScore.composite
+    wins regardless of category. GAP 5 auction bids, GAP 6 chain costs, and
+    GAP 10 stake bonuses all feed in here automatically once populated.
     """
     providers = state["providers"]
-    iteration = state["iteration"]
-    budget = state["budget_remaining"]
+    iteration  = state["iteration"]
+    budget     = state["budget_remaining"]
+    rep        = state.get("reputation_feedback", [])
 
-    # Match by provider `id` field (exact, stable)
-    category_priority = ["price_oracle", "sentiment", "trade_signal", "whale_alert", "wallet_score"]
-    target_id = category_priority[iteration % len(category_priority)]
+    WARM_START_SEQ = ["price_oracle", "sentiment", "trade_signal", "whale_alert", "wallet_score"]
 
-    selected = None
-    for p in providers:
-        if p.get("id") == target_id and p.get("price_usdc", 1) <= budget:
-            selected = p
-            break
-
-    # Fallback: cheapest provider within budget that we haven't bought in this exact iteration
-    if not selected:
-        for p in providers:
-            if p.get("price_usdc", 1) <= budget:
-                selected = p
-                break
-
-    if not selected:
+    scored = _build_provider_scores(providers, rep, budget)
+    if not scored:
         return {
             **state,
             "selected_provider": None,
@@ -133,14 +260,34 @@ def select_provider(state: AgentState) -> AgentState:
             ],
         }
 
+    selected_score: ProviderScore | None = None
+
+    if iteration < len(WARM_START_SEQ):
+        target_id = WARM_START_SEQ[iteration]
+        # Best-scored provider in the preferred category
+        preferred = [s for s in scored if s.provider_id == target_id]
+        if preferred:
+            selected_score = preferred[0]
+
+    # Phase 2 or fallback: top composite score across all categories
+    if not selected_score:
+        selected_score = scored[0]
+
+    # Map back to the raw provider dict (agent loop expects a dict)
+    selected = next(
+        (p for p in providers if p.get("id") == selected_score.provider_id), None
+    )
+    if not selected:
+        selected = providers[0]
+
     return {
         **state,
         "selected_provider": selected,
         "messages": state["messages"] + [
             {"role": "assistant", "content": (
-                f"Selected: {selected['name']} | "
-                f"${selected['price_usdc']:.4f}/call | "
-                f"Endpoint: {selected['endpoint']}"
+                f"Selected: {selected_score.name} | "
+                f"${selected_score.price_usdc:.4f}/call | "
+                f"{selected_score.explain()}"
             )}
         ],
     }

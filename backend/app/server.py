@@ -399,10 +399,16 @@ async def run_agent_sse(body: AgentRunBody = None):
             elif node_name == "select_provider":
                 provider = state.get("selected_provider")
                 if provider:
-                    rep_list = state.get("reputation_feedback", [])
-                    prior = next((f["score"] for f in reversed(rep_list) if f.get("provider_id") == provider.get("id")), None)
-                    rep_str = f"{prior}/100" if prior is not None else "N/A"
-                    yield emit("SELECT", f"Evaluating: {provider.get('name','?')} — ${provider.get('price_usdc',0):.3f}/call — Rep: {rep_str}", state)
+                    # Pull score breakdown from agent messages (buyer_agent embeds it)
+                    msgs = state.get("messages", [])
+                    score_line = next(
+                        (m.get("content","") if isinstance(m,dict) else getattr(m,"content","")
+                         for m in reversed(msgs)
+                         if "score=" in (m.get("content","") if isinstance(m,dict) else getattr(m,"content",""))),
+                        None
+                    )
+                    score_str = f" | {score_line.split('|')[-1].strip()}" if score_line else ""
+                    yield emit("SELECT", f"Evaluating: {provider.get('name','?')} — ${provider.get('price_usdc',0):.3f}/call{score_str}", state)
 
             elif node_name == "pay_and_fetch":
                 provider = state.get("selected_provider") or {}
