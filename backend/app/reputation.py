@@ -17,11 +17,18 @@ a funded wallet) without silently claiming success.
 from __future__ import annotations
 
 import os
-import time
+import threading
 from dataclasses import dataclass
 from typing import Optional
 
 from app.config import ARC, ERC_8004
+
+# ── Process-wide nonce lock ────────────────────────────────────────
+# Prevents "replacement transaction underpriced" when the agent sends
+# multiple reputation writes in rapid succession within one session.
+# Keyed by (rpc_url, sender_address) so different keys don't collide.
+_nonce_lock = threading.Lock()
+_nonce_cache: dict[str, int] = {}  # key → next nonce to use
 
 
 # ── Function fragment — ERC-8004 ReputationRegistry.giveFeedback ──
@@ -102,6 +109,25 @@ def give_feedback(
             abi=GIVE_FEEDBACK_ABI,
         )
 
+        fhash = (
+            feedback_hash if isinstance(feedback_hash, bytes)
+            else bytes.fromhex(feedback_hash[2:] if feedback_hash.startswith("0x") else feedback_hash)
+        )
+
+        # ── Nonce management ───────────────────────────────────────
+        # Use "pending" to account for in-flight txs. Lock ensures
+        # sequential nonce assignment even under concurrent calls.
+        nonce_key = f"{_rpc_url()}:{acct.address.lower()}"
+        with _nonce_lock:
+            chain_pending = w3.eth.get_transaction_count(acct.address, "pending")
+            # Take the max of chain-pending and our local counter so we
+            # never go backwards if a previous tx was dropped.
+            nonce = max(chain_pending, _nonce_cache.get(nonce_key, 0))
+            _nonce_cache[nonce_key] = nonce + 1
+
+        # Use 10% above base gas price to avoid replacement-underpriced
+        gas_price = int(w3.eth.gas_price * 1.1)
+
         tx = contract.functions.giveFeedback(
             int(agent_id),
             int(clamped),
@@ -110,15 +136,13 @@ def give_feedback(
             tag2,
             endpoint,
             feedback_uri,
-            feedback_hash if isinstance(feedback_hash, bytes) else bytes.fromhex(
-                feedback_hash[2:] if feedback_hash.startswith("0x") else feedback_hash
-            ),
+            fhash,
         ).build_transaction({
             "from": acct.address,
-            "nonce": w3.eth.get_transaction_count(acct.address),
+            "nonce": nonce,
             "chainId": ARC.chain_id,
             "gas": 200_000,
-            "gasPrice": w3.eth.gas_price,
+            "gasPrice": gas_price,
         })
 
         signed = acct.sign_transaction(tx)
@@ -126,4 +150,9 @@ def give_feedback(
         return FeedbackResult(True, tx_hash.hex(), None)
 
     except Exception as e:
+        # On any send failure, clear the local nonce cache so the next
+        # call re-fetches from chain rather than marching forward blindly.
+        nonce_key = f"{_rpc_url()}:{acct.address.lower()}" if 'acct' in dir() else ""
+        if nonce_key:
+            _nonce_cache.pop(nonce_key, None)
         return FeedbackResult(False, None, f"tx send failed: {e}")

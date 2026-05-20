@@ -43,13 +43,17 @@ class AgentState(TypedDict):
     reputation_feedback: list[dict]  # Feedback to record on-chain
     iteration: int                   # Current loop iteration
     max_iterations: int              # Stop after this many
+    signalpay_api_url: str           # API base URL (carried in state so LangGraph preserves it)
+    last_executed_action: str        # Prevents re-executing the same decision on subsequent iterations
+    exec_fired: bool                 # True only when execute_action actually ran this iteration
+    session_private_key: str         # Per-user derived key for EIP-3009 signing
 
 
 # ── Agent Configuration ─────────────────────────────────────────────
 
 @dataclass
 class AgentConfig:
-    signalpay_api_url: str = os.getenv("SIGNALPAY_API_URL", "http://localhost:8000")
+    signalpay_api_url: str = os.getenv("SIGNALPAY_API_URL", "http://localhost:8001")
     gateway_wallet: str = ""          # Circle Gateway wallet address
     private_key: str = ""             # For signing EIP-3009 authorizations
     session_budget: float = 0.10      # $0.10 budget per session
@@ -65,13 +69,14 @@ def discover_providers(state: AgentState) -> AgentState:
     """
     import httpx
 
-    config = state.get("_config", AgentConfig())
-    url = f"{config.signalpay_api_url}/discovery/providers"
+    api_url = state.get("signalpay_api_url") or os.getenv("SIGNALPAY_API_URL", "http://localhost:8001")
+    url = f"{api_url}/discovery/providers"
 
     try:
         resp = httpx.get(url, timeout=10)
         providers = resp.json().get("providers", [])
-    except Exception:
+    except Exception as e:
+        print(f"[agent] discover failed: {e}")
         providers = []
 
     # Sort by price (cheapest first)
@@ -79,6 +84,7 @@ def discover_providers(state: AgentState) -> AgentState:
 
     return {
         **state,
+        "signalpay_api_url": api_url,
         "providers": providers,
         "messages": state["messages"] + [
             {"role": "assistant", "content": f"Discovered {len(providers)} signal providers."}
@@ -91,26 +97,27 @@ def select_provider(state: AgentState) -> AgentState:
     Select the best provider based on category need, price, and reputation.
 
     Strategy:
-    - First iteration: whale alerts (most actionable)
-    - Second: price oracle (context)
-    - Third: sentiment (confirmation)
-    - Subsequent: cheapest available
+    - Iteration 0: price_oracle (base context)
+    - Iteration 1: sentiment (F&G + community vote)
+    - Iteration 2: trade_signal (composite BUY/SELL/HOLD — derived from above)
+    - Iteration 3: whale_alert (on-chain confirmation)
+    - Iteration 4+: cycle cheapest available
     """
     providers = state["providers"]
     iteration = state["iteration"]
     budget = state["budget_remaining"]
 
-    category_priority = ["whale_alert", "price_oracle", "sentiment", "wallet_score"]
-    target_category = category_priority[iteration % len(category_priority)]
+    # Match by provider `id` field (exact, stable)
+    category_priority = ["price_oracle", "sentiment", "trade_signal", "whale_alert", "wallet_score"]
+    target_id = category_priority[iteration % len(category_priority)]
 
     selected = None
     for p in providers:
-        if target_category.replace("_", "-") in p.get("endpoint", ""):
-            if p.get("price_usdc", 1) <= budget:
-                selected = p
-                break
+        if p.get("id") == target_id and p.get("price_usdc", 1) <= budget:
+            selected = p
+            break
 
-    # Fallback: cheapest provider within budget
+    # Fallback: cheapest provider within budget that we haven't bought in this exact iteration
     if not selected:
         for p in providers:
             if p.get("price_usdc", 1) <= budget:
@@ -156,15 +163,15 @@ def pay_and_fetch(state: AgentState) -> AgentState:
     if not provider:
         return {**state, "signal_data": None}
 
-    config = state.get("_config", AgentConfig())
+    api_url = state.get("signalpay_api_url") or os.getenv("SIGNALPAY_API_URL", "http://localhost:8001")
     endpoint = provider["endpoint"]
-    url = f"{config.signalpay_api_url}{endpoint}"
+    url = f"{api_url}{endpoint}"
 
-    # Handle parameterized routes
-    if "{token}" in url or "/price/" in endpoint:
-        url = url.replace("{token}", "BTC")
-    if "/sentiment/" in endpoint:
-        url = f"{config.signalpay_api_url}/signals/sentiment/SOL"
+    # Handle parameterized routes — pick tokens by category
+    category = provider.get("id", "")
+    if "{token}" in url:
+        token_map = {"price_oracle": "BTC", "sentiment": "ETH", "trade_signal": "BTC"}
+        url = url.replace("{token}", token_map.get(category, "BTC"))
 
     try:
         # Step 1: Request without payment → 402
@@ -182,9 +189,12 @@ def pay_and_fetch(state: AgentState) -> AgentState:
             )
 
             # Step 3: Sign EIP-712 TransferWithAuthorization.
-            # Prefer a buyer-specific key so the provider wallet's key isn't
-            # reused on the buyer side.
-            private_key = os.getenv("BUYER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY", "")
+            # Use per-user derived key from state (injected by /agent/run), then env fallback.
+            private_key = (
+                state.get("session_private_key")
+                or os.getenv("BUYER_PRIVATE_KEY")
+                or os.getenv("PRIVATE_KEY", "")
+            )
             nonce = "0x" + secrets.token_hex(32)
             valid_before = int(time.time()) + 10 * 24 * 3600  # 10 days (must exceed maxTimeoutSeconds=432000)
 
@@ -285,8 +295,8 @@ def pay_and_fetch(state: AgentState) -> AgentState:
                 ],
             }
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[agent] pay_and_fetch error: {e}")
 
     return {
         **state,
@@ -344,21 +354,94 @@ def analyze_signals(state: AgentState) -> AgentState:
             f"(score: {data.get('sentiment_score', 0):.2f})"
         )
 
-    action = "HOLD — insufficient signal convergence"
-    if whale_alerts and any(
-        s.get("data", {}).get("direction") in ("transfer_in", "stake")
-        and s.get("confidence", 0) > 0.7
-        for s in whale_alerts
-    ):
-        if sentiments and any(
-            s.get("data", {}).get("sentiment_label") == "bullish"
-            for s in sentiments
-        ):
-            action = "SIGNAL: Bullish convergence — whale accumulation + positive sentiment"
-        else:
-            action = "WATCH: Whale activity detected, awaiting sentiment confirmation"
+    # ── Real decision logic using live signal data ──────────────────
+    action = "HOLD"
+    reason_parts = []
 
-    analysis = " | ".join(analysis_parts)
+    # Check if we have a trade_signal (composite — highest-value, use directly)
+    trade_signals = [s for s in signals if s.get("category") == "trade_signal"]
+
+    # Extract latest values from individual signals
+    fng = None
+    sentiment_label = None
+    sentiment_score = 0.0
+    price_change = 0.0
+    token = "BTC"
+
+    if sentiments:
+        latest_sent = sentiments[-1].get("data", {})
+        fng = latest_sent.get("fear_greed_index")
+        sentiment_label = latest_sent.get("sentiment_label", "neutral")
+        sentiment_score = latest_sent.get("sentiment_score", 0.0)
+        token = latest_sent.get("token", "BTC")
+        reason_parts.append(
+            f"F&G={fng} ({latest_sent.get('fear_greed_label', '?')}) | "
+            f"Community={latest_sent.get('community_votes_up_pct', '?')}% bullish"
+        )
+
+    if price_signals:
+        latest_price = price_signals[-1].get("data", {})
+        price_change = latest_price.get("change_24h_pct", 0.0)
+        token = latest_price.get("token", token)
+        reason_parts.append(
+            f"{token} @ ${latest_price.get('price_usd', 0):,.2f} ({price_change:+.2f}% 24h)"
+        )
+
+    if whale_alerts:
+        latest_whale = whale_alerts[-1].get("data", {})
+        whale_amount = latest_whale.get("amount_usdc", 0)
+        whale_status = latest_whale.get("status", "")
+        if whale_status != "quiet" and whale_amount > 0:
+            reason_parts.append(
+                f"Whale: {whale_amount:.4f} USDC on Arc ({latest_whale.get('total_transfers_in_window', 0)} txs)"
+            )
+
+    # Trade signal composite — trust directly, it's already the synthesis
+    if trade_signals:
+        ts = trade_signals[-1].get("data", {})
+        ts_action = ts.get("action", "HOLD")
+        ts_rationale = ts.get("rationale", "")
+        ts_token = ts.get("token", token)
+        ts_fng = ts.get("fear_greed_index", fng)
+        ts_composite = ts.get("composite_score", 0)
+        reason_parts.append(
+            f"TradeSignal: {ts_action} (composite={ts_composite:+.2f}, F&G={ts_fng})"
+        )
+        action = f"{ts_action} — {ts_rationale}" if ts_rationale else ts_action
+
+    elif fng is not None:
+        # Fall back to manual rules if no trade_signal yet
+        extreme_fear = fng < 30
+        extreme_greed = fng > 75
+        moderate_fear = 30 <= fng < 45
+        strong_bull_sentiment = sentiment_label == "bullish" and sentiment_score > 0.3
+        strong_bear_sentiment = sentiment_label == "bearish" and sentiment_score < -0.3
+        price_dumped = price_change < -5.0
+        price_pumped = price_change > 5.0
+
+        if extreme_fear and strong_bull_sentiment:
+            action = f"BUY — extreme fear (F&G={fng}) with bullish community divergence — strong contrarian entry on {token}"
+        elif extreme_fear and price_dumped:
+            action = f"ACCUMULATE — extreme fear (F&G={fng}) on {price_change:.1f}% dip — high-conviction contrarian signal on {token}"
+        elif extreme_fear:
+            action = f"ACCUMULATE — extreme fear (F&G={fng}) — historically strong contrarian entry for {token}"
+        elif extreme_greed and strong_bear_sentiment:
+            action = f"SELL — extreme greed (F&G={fng}) + bearish community — distribution zone on {token}"
+        elif extreme_greed:
+            action = f"REDUCE — extreme greed (F&G={fng}) — trim exposure on {token}, rotate to cash"
+        elif moderate_fear and strong_bull_sentiment:
+            action = f"ACCUMULATE — fear (F&G={fng}) with bullish divergence — selective entry on {token}"
+        elif strong_bull_sentiment and price_pumped:
+            action = f"WATCH — bullish momentum on {token} but {price_change:.1f}% already moved — wait for pullback"
+        elif 45 <= fng <= 55:
+            action = f"HOLD — neutral market (F&G={fng}), no strong edge"
+        else:
+            action = f"HOLD — mixed signals (F&G={fng}, sentiment={sentiment_label}, {token} {price_change:+.1f}%)"
+
+    else:
+        action = f"HOLD — accumulating signals ({len(signals)} so far)"
+
+    analysis = " | ".join(reason_parts) if reason_parts else "Insufficient data"
 
     return {
         **state,
@@ -442,6 +525,77 @@ def record_reputation(state: AgentState) -> AgentState:
     }
 
 
+def execute_action(state: AgentState) -> AgentState:
+    """
+    Execute the trading decision.
+
+    For BUY/ACCUMULATE: records the intent on-chain via ERC-8004 with a
+    market_decision tag, then logs the concrete action.
+    For SELL/REDUCE: logs the exit signal with governance checkpoint note.
+    For HOLD/WATCH: no-op.
+    """
+    from app.reputation import give_feedback
+
+    action = state.get("action_plan", "HOLD") or "HOLD"
+    signals = state.get("signals_collected", [])
+    last_executed = state.get("last_executed_action", "")
+
+    # Skip: HOLD/WATCH/empty, anything that looks like "No signals...", or already executed
+    _skip_prefixes = ("HOLD", "WATCH", "No signals", "Mixed signals", "Accumulating")
+    if any(action.startswith(p) for p in _skip_prefixes) or not action:
+        return {**state, "exec_fired": False}
+    if action == last_executed:
+        return {**state, "exec_fired": False}
+
+    # Determine direction
+    is_buy = any(k in action for k in ("BUY", "ACCUMULATE"))
+    is_sell = any(k in action for k in ("SELL", "REDUCE"))
+
+    # Stable agent_id for market-decision records
+    decision_agent_id = int(
+        hashlib.sha256(b"signalpay_market_decision_v1").hexdigest()[:12], 16
+    )
+    score = 85 if is_buy else 20 if is_sell else 50
+    tag2 = "accumulate" if is_buy else "reduce" if is_sell else "neutral"
+
+    # Write decision on-chain via ERC-8004
+    result = give_feedback(
+        agent_id=decision_agent_id,
+        score_0_100=score,
+        tag1="market_decision",
+        tag2=tag2,
+        endpoint="arc_market",
+    )
+
+    # Build the execution log line
+    signals_summary = f"{len(signals)} signals purchased" if signals else "no signals"
+    if is_buy:
+        exec_msg = (
+            f"EXECUTE: {action} | "
+            f"Basis: {signals_summary} | "
+            f"Settlement: Circle USDC on Arc"
+        )
+    else:
+        exec_msg = (
+            f"EXECUTE: {action} | "
+            f"Basis: {signals_summary}"
+        )
+
+    if result.submitted:
+        exec_msg += f" | Decision recorded on Arc (tx {result.tx_hash[:10]}…)"
+    else:
+        exec_msg += f" | Decision logged [{result.reason or 'off-chain'}]"
+
+    return {
+        **state,
+        "last_executed_action": action,
+        "exec_fired": True,
+        "messages": state["messages"] + [
+            {"role": "assistant", "content": exec_msg}
+        ],
+    }
+
+
 def should_continue(state: AgentState) -> Literal["select_provider", "end"]:
     """Decide whether to buy another signal or stop."""
     if state["iteration"] >= state["max_iterations"]:
@@ -454,8 +608,8 @@ def should_continue(state: AgentState) -> Literal["select_provider", "end"]:
 
 
 def increment_iteration(state: AgentState) -> AgentState:
-    """Bump the iteration counter."""
-    return {**state, "iteration": state["iteration"] + 1}
+    """Bump the iteration counter and reset per-iteration flags."""
+    return {**state, "iteration": state["iteration"] + 1, "exec_fired": False}
 
 
 def summarize(state: AgentState) -> AgentState:
@@ -490,6 +644,7 @@ def build_agent_graph() -> StateGraph:
     builder.add_node("select_provider", select_provider)
     builder.add_node("pay_and_fetch", pay_and_fetch)
     builder.add_node("analyze", analyze_signals)
+    builder.add_node("execute_action", execute_action)
     builder.add_node("record_reputation", record_reputation)
     builder.add_node("increment", increment_iteration)
     builder.add_node("summarize", summarize)
@@ -499,7 +654,8 @@ def build_agent_graph() -> StateGraph:
     builder.add_edge("select_provider", "pay_and_fetch")
     builder.add_edge("pay_and_fetch", "record_reputation")
     builder.add_edge("record_reputation", "analyze")
-    builder.add_edge("analyze", "increment")
+    builder.add_edge("analyze", "execute_action")
+    builder.add_edge("execute_action", "increment")
     builder.add_conditional_edges("increment", should_continue, {
         "select_provider": "select_provider",
         "end": "summarize",
@@ -532,7 +688,9 @@ async def run_agent(config: AgentConfig | None = None):
         "reputation_feedback": [],
         "iteration": 0,
         "max_iterations": config.max_iterations,
-        "_config": config,
+        "signalpay_api_url": config.signalpay_api_url,
+        "last_executed_action": "",
+        "exec_fired": False,
     }
 
     print("\n══════════════════════════════════════════════")

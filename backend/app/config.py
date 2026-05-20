@@ -4,6 +4,16 @@ SignalPay configuration — Arc Testnet constants, contract addresses, nanopayme
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+# Load .env from repo root (two levels up from this file: backend/app/ → backend/ → /)
+_env_path = Path(__file__).parent.parent.parent / ".env"
+if _env_path.exists():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_path, override=False)
+    except ImportError:
+        pass
 
 
 @dataclass(frozen=True)
@@ -60,11 +70,17 @@ X402_VERIFY_PATH = os.getenv("X402_VERIFY_PATH", "/v1/x402/verify")
 # is unreachable — so local demos work without a funded Gateway wallet.
 X402_DEV_MODE = os.getenv("X402_DEV_MODE", "0") == "1"
 
+# Per-user agent wallet derivation seed.
+# Backend derives a unique keypair per connected wallet via HMAC-SHA256(user_address, seed).
+# Generate with: python3 -c "import secrets; print(secrets.token_hex(32))"
+AGENT_MASTER_SEED = os.getenv("AGENT_MASTER_SEED", "")
+
 # Provider pricing (USDC 6 decimals)
 DEFAULT_PRICES = {
     "whale_alert": 2000,        # $0.002 per call
     "price_oracle": 1000,       # $0.001 per call
     "wallet_score": 5000,       # $0.005 per call
     "sentiment": 3000,          # $0.003 per call
-    "trade_signal": 10000,      # $0.01 per call
+    "trade_signal": 10000,      # $0.010 per call
+    "yield_intel": 3000,        # $0.003 per call
 }

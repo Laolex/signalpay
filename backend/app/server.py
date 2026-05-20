@@ -31,11 +31,14 @@ from fastapi.responses import StreamingResponse
 
 from app.config import ARC, DEFAULT_PRICES
 from app.x402 import X402PaymentMiddleware, ledger
+from app.governance import GovernancePolicy, daily_spent, daily_remaining
 from providers.signals import (
     generate_whale_alert,
     generate_price_signal,
     generate_wallet_score,
     generate_sentiment,
+    generate_trade_signal,
+    generate_yield_intel,
     PROVIDERS,
 )
 
@@ -96,8 +99,10 @@ async def list_providers():
                 "price_usdc": price / 1_000_000,
                 "price_raw": price,
                 "endpoint": {
-                    "price_oracle": "/signals/price/{token}",
-                    "sentiment": "/signals/sentiment/{token}",
+                    "price_oracle":  "/signals/price/{token}",
+                    "sentiment":     "/signals/sentiment/{token}",
+                    "trade_signal":  "/signals/trade-signal/{token}",
+                    "yield_intel":   "/signals/yield-intel",
                 }.get(category, f"/signals/{category.replace('_', '-')}"),
                 "x402": True,
             }
@@ -118,15 +123,35 @@ async def provider_stats():
     return ledger.stats()
 
 
+@app.get("/governance/policy")
+async def governance_policy():
+    """Active spend governance policy."""
+    policy = GovernancePolicy.from_env()
+    spent = daily_spent()
+    return {
+        "policy": policy.as_display(),
+        "today": {
+            "spent_usdc": spent / 1_000_000,
+            "remaining_usdc": daily_remaining(policy) / 1_000_000,
+            "budget_usdc": policy.daily_budget / 1_000_000,
+            "pct_used": round(spent / policy.daily_budget * 100, 1) if policy.daily_budget else 0,
+        },
+    }
+
+
 @app.get("/feed")
 async def live_feed():
     """Latest signal from a random provider — public, for dashboard feed."""
     import random
+    # wallet_score requires an RPC call — keep it out of the fast public feed
+    # trade_signal reuses cached price+sentiment — no extra API calls
+    tokens = ["BTC", "ETH", "SOL"]
     generators = [
         ("whale_alert", generate_whale_alert, {}),
-        ("price_oracle", generate_price_signal, {"token": random.choice(["BTC", "ETH", "SOL", "ARC"])}),
-        ("wallet_score", generate_wallet_score, {}),
-        ("sentiment", generate_sentiment, {"token": random.choice(["BTC", "ETH", "SOL"])}),
+        ("price_oracle", generate_price_signal, {"token": random.choice(tokens)}),
+        ("sentiment", generate_sentiment, {"token": random.choice(tokens)}),
+        ("trade_signal", generate_trade_signal, {"token": random.choice(tokens)}),
+        ("yield_intel", generate_yield_intel, {}),
     ]
     category, fn, kwargs = random.choice(generators)
     signal = fn(**kwargs)
@@ -181,15 +206,128 @@ async def sentiment(token: str):
     }
 
 
+@app.get("/signals/trade-signal/{token}")
+async def trade_signal(token: str):
+    """
+    Composite trade signal: price momentum + Fear & Greed + sentiment.
+    Returns BUY / ACCUMULATE / HOLD / REDUCE / SELL with confidence. Costs $0.01 USDC.
+    """
+    signal = generate_trade_signal(token=token.upper())
+    return {
+        "signal": asdict(signal),
+        "payment": "confirmed",
+        "price_usdc": DEFAULT_PRICES["trade_signal"] / 1_000_000,
+    }
+
+
+@app.get("/signals/trade-signal")
+async def trade_signal_default():
+    """Composite trade signal for BTC (default). Costs $0.01 USDC."""
+    signal = generate_trade_signal(token="BTC")
+    return {
+        "signal": asdict(signal),
+        "payment": "confirmed",
+        "price_usdc": DEFAULT_PRICES["trade_signal"] / 1_000_000,
+    }
+
+
+@app.get("/signals/yield-intel")
+async def yield_intel():
+    """Top USDC yield opportunities across DeFi — DefiLlama. Costs $0.003 USDC."""
+    signal = generate_yield_intel()
+    return {
+        "signal": asdict(signal),
+        "payment": "confirmed",
+        "price_usdc": DEFAULT_PRICES["yield_intel"] / 1_000_000,
+    }
+
+
+# ── Agent Wallet ─────────────────────────────────────────────────────
+
+def _read_usdc_balance(address: str) -> tuple[float, int]:
+    """Return (balance_usdc, balance_raw) for an address on Arc Testnet."""
+    try:
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider(ARC.rpc, request_kwargs={"timeout": 10}))
+        usdc = w3.eth.contract(
+            address=Web3.to_checksum_address("0x3600000000000000000000000000000000000000"),
+            abi=[{"inputs": [{"name": "account", "type": "address"}], "name": "balanceOf",
+                  "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}],
+        )
+        raw = usdc.functions.balanceOf(Web3.to_checksum_address(address)).call()
+        return round(raw / 1_000_000, 6), raw
+    except Exception:
+        return 0.0, 0
+
+
+def _derive_user_wallet(user_address: str):
+    """
+    Derive a deterministic per-user agent wallet.
+    Uses HMAC-SHA256(user_address.lower(), AGENT_MASTER_SEED) as the private key.
+    Falls back to BUYER_PRIVATE_KEY if AGENT_MASTER_SEED is not configured.
+    """
+    import hmac
+    import hashlib
+    from eth_account import Account
+    from app.config import AGENT_MASTER_SEED
+
+    if not user_address or user_address == "0x0":
+        # No user address — fall back to shared key
+        key = os.getenv("BUYER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY") or ""
+        return Account.from_key(key) if key else None
+
+    if AGENT_MASTER_SEED:
+        raw = hmac.new(
+            AGENT_MASTER_SEED.encode(),
+            user_address.lower().encode(),
+            hashlib.sha256,
+        ).digest()
+        return Account.from_key(raw)
+
+    # No seed configured — fall back to shared key
+    key = os.getenv("BUYER_PRIVATE_KEY") or os.getenv("PRIVATE_KEY") or ""
+    return Account.from_key(key) if key else None
+
+
+@app.get("/agent/wallet")
+async def agent_wallet(user: str = Query(default="", description="Connected wallet address")):
+    """Per-user agent wallet address and live USDC balance on Arc Testnet."""
+    try:
+        acct = _derive_user_wallet(user)
+        if not acct:
+            return {"address": None, "balance_usdc": 0.0, "balance_raw": 0, "funded": False}
+        balance_usdc, balance_raw = _read_usdc_balance(acct.address)
+        return {
+            "address": acct.address,
+            "balance_usdc": balance_usdc,
+            "balance_raw": balance_raw,
+            "funded": balance_raw > 0,
+        }
+    except Exception as e:
+        return {"address": None, "balance_usdc": 0.0, "balance_raw": 0, "funded": False, "error": str(e)}
+
+
 # ── Agent Runner (SSE) ──────────────────────────────────────────────
 
+class AgentRunRequest(dict):
+    pass
+
+
+from pydantic import BaseModel
+
+class AgentRunBody(BaseModel):
+    wallet_address: str = ""
+
+
 @app.post("/agent/run")
-async def run_agent_sse():
+async def run_agent_sse(body: AgentRunBody = None):
     """Run the buyer agent and stream log events via SSE."""
     from agents.buyer_agent import build_agent_graph, AgentConfig, AgentState
 
+    user_address = (body.wallet_address if body else "") or ""
+
     async def event_stream():
-        def emit(action: str, msg: str, state: dict | None = None, signal: dict | None = None) -> str:
+        def emit(action: str, msg: str, state: dict | None = None, signal: dict | None = None, tx_hash: str | None = None) -> str:
             s = state or {}
             event = {
                 "action": action,
@@ -200,13 +338,29 @@ async def run_agent_sse():
             }
             if signal:
                 event["signal"] = signal
+            if tx_hash:
+                event["tx_hash"] = tx_hash
             return f"data: {_json.dumps(event)}\n\n"
 
         config = AgentConfig()
+
+        # Derive per-user agent wallet and read real on-chain balance
+        agent_budget = config.session_budget
+        session_key = ""
+        try:
+            acct = _derive_user_wallet(user_address)
+            if acct:
+                session_key = acct.key.hex() if hasattr(acct, "key") else ""
+                balance_usdc, balance_raw = _read_usdc_balance(acct.address)
+                if balance_raw > 0:
+                    agent_budget = balance_usdc
+        except Exception:
+            pass
+
         graph = build_agent_graph()
         initial_state: AgentState = {
             "messages": [{"role": "system", "content": "You are a SignalPay buyer agent."}],
-            "budget_remaining": config.session_budget,
+            "budget_remaining": agent_budget,
             "total_spent": 0.0,
             "providers": [],
             "selected_provider": None,
@@ -216,12 +370,23 @@ async def run_agent_sse():
             "reputation_feedback": [],
             "iteration": 0,
             "max_iterations": config.max_iterations,
-            "_config": config,
+            "signalpay_api_url": config.signalpay_api_url,
+            "last_executed_action": "",
+            "exec_fired": False,
+            "session_private_key": session_key,
         }
 
-        yield emit("INIT", f"Agent session started. Budget: ${config.session_budget:.3f} USDC", initial_state)
+        yield emit("INIT", f"Agent session started. Budget: ${agent_budget:.6f} USDC", initial_state)
 
-        async for node_output in graph.astream(initial_state):
+        try:
+          stream = graph.astream(initial_state)
+        except Exception as e:
+          yield f"data: {_json.dumps({'action': 'ERROR', 'msg': str(e)})}\n\n"
+          yield f"data: {_json.dumps({'action': 'DONE'})}\n\n"
+          return
+
+        async for node_output in stream:
+          try:
             node_name = next(iter(node_output))
             state = node_output[node_name]
 
@@ -234,7 +399,10 @@ async def run_agent_sse():
             elif node_name == "select_provider":
                 provider = state.get("selected_provider")
                 if provider:
-                    yield emit("SELECT", f"Evaluating: {provider.get('name','?')} — ${provider.get('price_usdc',0):.3f}/call — Rep: N/A", state)
+                    rep_list = state.get("reputation_feedback", [])
+                    prior = next((f["score"] for f in reversed(rep_list) if f.get("provider_id") == provider.get("id")), None)
+                    rep_str = f"{prior}/100" if prior is not None else "N/A"
+                    yield emit("SELECT", f"Evaluating: {provider.get('name','?')} — ${provider.get('price_usdc',0):.3f}/call — Rep: {rep_str}", state)
 
             elif node_name == "pay_and_fetch":
                 provider = state.get("selected_provider") or {}
@@ -262,8 +430,17 @@ async def run_agent_sse():
                 feedback = state.get("reputation_feedback", [])
                 provider = state.get("selected_provider") or {}
                 if feedback:
-                    score = feedback[-1].get("score", 0)
-                    yield emit("REPUTATION", f"Reputation: scored {provider.get('name','provider')} → {score}/100", state)
+                    latest_fb = feedback[-1]
+                    score = latest_fb.get("score", 0)
+                    name = provider.get("name", "provider")
+                    tx = latest_fb.get("tx_hash")
+                    on_chain = latest_fb.get("on_chain", False)
+                    yield emit("REPUTATION", f"Scored {name} → {score}/100", state)
+                    if on_chain and tx:
+                        yield emit("REPUTATION", f"On-chain write confirmed", state, tx_hash=tx)
+                    elif not on_chain:
+                        reason = latest_fb.get("error") or "no key configured"
+                        yield emit("REPUTATION", f"Off-chain: {reason}", state)
 
             elif node_name == "analyze":
                 action_plan = state.get("action_plan", "")
@@ -272,11 +449,26 @@ async def run_agent_sse():
                 if action_plan:
                     yield emit("ANALYZE", f"Decision: {action_plan}", state)
 
+            elif node_name == "execute_action":
+                if state.get("exec_fired"):
+                    msgs = state.get("messages", [])
+                    exec_content = next(
+                        (m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
+                         for m in reversed(msgs)
+                         if "EXECUTE" in (m.get("content", "") if isinstance(m, dict) else getattr(m, "content", ""))),
+                        state.get("action_plan", "")
+                    )
+                    yield emit("EXECUTE", exec_content, state)
+
             elif node_name == "summarize":
                 n = len(state.get("signals_collected", []))
                 spent = state.get("total_spent", 0)
                 remaining = state.get("budget_remaining", 0)
                 yield emit("SUMMARY", f"═══ Session Complete: {n} signals | ${spent:.6f} spent | ${remaining:.6f} remaining ═══", state)
+
+          except Exception as node_err:
+            print(f"[sse] node error: {node_err}")
+            yield f"data: {_json.dumps({'action': 'ERROR', 'msg': str(node_err)})}\n\n"
 
         yield f"data: {_json.dumps({'action': 'DONE'})}\n\n"
 
