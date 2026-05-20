@@ -198,6 +198,8 @@ class AgentState(TypedDict):
     last_executed_action: str        # Prevents re-executing the same decision on subsequent iterations
     exec_fired: bool                 # True only when execute_action actually ran this iteration
     session_private_key: str         # Per-user derived key for EIP-3009 signing
+    session_id: str                  # GAP 4: economic memory session id
+    user_address: str                # GAP 4: connected wallet (for per-user history)
 
 
 # ── Agent Configuration ─────────────────────────────────────────────
@@ -446,6 +448,22 @@ def pay_and_fetch(state: AgentState) -> AgentState:
             try:
                 from app.reputation_store import record_prediction
                 record_prediction(provider.get("id", "unknown"), signal)
+            except Exception:
+                pass  # fail-open — never block signal delivery
+
+            # GAP 4: record spend in persistent economic memory
+            try:
+                from app.economic_memory import record_spend
+                receipt = getattr(state.get("payment_receipt", None), "payment_id", None)
+                record_spend(
+                    session_id=state.get("session_id", ""),
+                    user_address=state.get("user_address", ""),
+                    provider_id=provider.get("id", "unknown"),
+                    category=signal.get("category", "unknown"),
+                    cost_usdc=price,
+                    confidence=float(signal.get("confidence", 0.5)),
+                    payment_id=receipt,
+                )
             except Exception:
                 pass  # fail-open — never block signal delivery
 
@@ -795,6 +813,22 @@ def increment_iteration(state: AgentState) -> AgentState:
 
 def summarize(state: AgentState) -> AgentState:
     """Final summary of the agent's session."""
+    # GAP 4: close the session record with final economics
+    try:
+        from app.economic_memory import end_session
+        providers_used = [
+            s.get("category", "") for s in state.get("signals_collected", [])
+        ]
+        end_session(
+            session_id=state.get("session_id", ""),
+            spent_usdc=state["total_spent"],
+            signals_count=len(state["signals_collected"]),
+            action_taken=state.get("action_plan"),
+            providers_used=providers_used,
+        )
+    except Exception:
+        pass  # fail-open
+
     summary = (
         f"\n{'═' * 50}\n"
         f"  SignalPay Agent Session Summary\n"

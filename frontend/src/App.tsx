@@ -853,6 +853,8 @@ function sharpeColor(s: number | undefined) {
 function ProviderDashboard() {
   const [stats, setStats] = useState<{ total_revenue_usdc: number; total_calls: number; recent: any[] } | null>(null);
   const [repMetrics, setRepMetrics] = useState<Record<string, any>>({});
+  const [economics, setEconomics]   = useState<any>(null);
+  const [sessions, setSessions]     = useState<any[]>([]);
   const { data: totalOnChain } = useRegistryStats();
   const { providers: chainProviders } = useAllProviders(Number(totalOnChain ?? 0));
 
@@ -867,6 +869,8 @@ function ProviderDashboard() {
       for (const p of (d.providers ?? [])) m[p.provider_id] = p;
       setRepMetrics(m);
     }).catch(() => {});
+    fetch(`${API_BASE}/economics`).then(r => r.json()).then(setEconomics).catch(() => {});
+    fetch(`${API_BASE}/economics/sessions?limit=10`).then(r => r.json()).then((d: any) => setSessions(d.sessions ?? [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -897,17 +901,130 @@ function ProviderDashboard() {
     YIELD_INTEL:  "yield_intel",
   };
 
+  const eLife   = economics?.lifetime ?? {};
+  const eByProv = economics?.by_provider ?? [];
+  const eDaily  = economics?.daily_spend ?? [];
+  const totalLifetimeSpend = eLife.total_spend ?? 0;
+  const totalSessions      = eLife.session_count ?? 0;
+  const avgSessionCost     = totalSessions > 0 ? (totalLifetimeSpend / totalSessions) : 0;
+  const busiestProvider    = eByProv[0];
+
   return (
     <div style={{ fontFamily: MONO }}>
       <Panel style={{ display: "flex", marginBottom: 1 }}>
         <StatCell label="TOTAL REVENUE"  value={`$${totalEarnings.toFixed(6)}`} color={C.green}  sub="USDC session" />
         <StatCell label="VALIDATED CALLS" value={totalCalls.toLocaleString()}    color={C.cyan}  sub="x402 settled" />
-        <StatCell label="PROVIDERS"       value={providers.length}               color={C.orange} sub="registered" />
+        <StatCell label="LIFETIME SPEND" value={`$${totalLifetimeSpend.toFixed(4)}`} color={C.orange} sub={`${totalSessions} sessions`} />
         <StatCell label="AVG HIT RATE"
           value={avgHitRate !== null ? `${(avgHitRate * 100).toFixed(1)}%` : "—"}
           color={avgHitRate !== null ? accColor(avgHitRate) : C.muted}
           sub={resolvedTotal > 0 ? `${resolvedTotal} resolved` : "accumulating"} />
         <div style={{ flex: 1 }} />
+      </Panel>
+
+      {/* Economics overview */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{
+          padding: "8px 12px", borderBottom: `1px solid ${C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <Label>ECONOMIC MEMORY — CROSS-SESSION SPEND ANALYTICS</Label>
+          <span style={{ color: C.muted, fontSize: 9 }}>PERSISTED · SQLITE</span>
+        </div>
+
+        {/* Summary stats row */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}` }}>
+          {[
+            { label: "SESSIONS",       value: totalSessions.toString(),               color: C.cyan },
+            { label: "LIFETIME CALLS", value: (eLife.total_calls ?? 0).toString(),    color: C.blue },
+            { label: "LIFETIME SPEND", value: `$${totalLifetimeSpend.toFixed(6)}`,    color: C.orange },
+            { label: "AVG SESSION",    value: `$${avgSessionCost.toFixed(6)}`,         color: C.yellow },
+            { label: "TOP PROVIDER",   value: busiestProvider?.category?.toUpperCase().replace("_"," ") ?? "—", color: C.green },
+          ].map(s => (
+            <div key={s.label} style={{ flex: 1, padding: "10px 12px", borderRight: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>{s.label}</div>
+              <div style={{ fontSize: 13, color: s.color, fontWeight: 700 }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Per-provider spend breakdown */}
+        {eByProv.length > 0 && (
+          <>
+            <div style={{
+              display: "grid", gridTemplateColumns: "48px 1fr 80px 80px 80px 60px",
+              padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+            }}>
+              {["TYPE", "PROVIDER", "CALLS", "TOTAL $", "AVG $", "SHARE"].map(h => <Label key={h}>{h}</Label>)}
+            </div>
+            {eByProv.map((p: any, i: number) => {
+              const catKey = p.provider_id.toUpperCase();
+              const color  = CAT_COLOR[catKey] ?? C.text;
+              const tag    = CAT_TAG[catKey] ?? "SIG";
+              return (
+                <div key={p.provider_id} style={{
+                  display: "grid", gridTemplateColumns: "48px 1fr 80px 80px 80px 60px",
+                  padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+                  background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+                }}>
+                  <span style={{ background: color + "22", color, fontSize: 9, fontWeight: 700, padding: "2px 5px" }}>{tag}</span>
+                  <span style={{ color: C.text }}>{p.category.replace(/_/g, " ")}</span>
+                  <span style={{ color: C.cyan }}>{p.calls}</span>
+                  <span style={{ color: C.orange }}>${p.total_spend.toFixed(4)}</span>
+                  <span style={{ color: C.dim }}>${p.avg_cost.toFixed(4)}</span>
+                  <span style={{ color: C.muted }}>{p.spend_share}%</span>
+                </div>
+              );
+            })}
+          </>
+        )}
+        {eByProv.length === 0 && (
+          <div style={{ padding: "20px 12px", color: C.muted, fontSize: 10 }}>
+            No spend recorded yet — run the agent to populate economic memory
+          </div>
+        )}
+      </Panel>
+
+      {/* Session history */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+          <Label>SESSION HISTORY</Label>
+        </div>
+        <div style={{
+          display: "grid", gridTemplateColumns: "140px 1fr 70px 70px 50px 1fr",
+          padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+        }}>
+          {["TIMESTAMP", "WALLET", "BUDGET", "SPENT", "SIGS", "ACTION"].map(h => <Label key={h}>{h}</Label>)}
+        </div>
+        {sessions.length === 0 && (
+          <div style={{ padding: "20px 12px", color: C.muted, fontSize: 10 }}>
+            No sessions recorded yet
+          </div>
+        )}
+        {sessions.map((s: any, i: number) => {
+          const action = s.action_taken ?? "—";
+          const actionShort = action.length > 40 ? action.slice(0, 40) + "…" : action;
+          const actionKey = (action.match(/^(BUY|ACCUMULATE|HOLD|REDUCE|SELL|WATCH)/)?.[0] ?? "").toUpperCase();
+          const ACTION_COLORS: Record<string, string> = { BUY: C.green, ACCUMULATE: C.green, HOLD: C.muted, REDUCE: C.yellow, SELL: C.red, WATCH: C.dim };
+          const actionColor = ACTION_COLORS[actionKey] ?? C.dim;
+          const wallet = s.user_address ? `${s.user_address.slice(0,8)}…${s.user_address.slice(-4)}` : "anonymous";
+          return (
+            <div key={s.session_id} style={{
+              display: "grid", gridTemplateColumns: "140px 1fr 70px 70px 50px 1fr",
+              padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+              background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+            }}>
+              <span style={{ color: C.muted }}>
+                {s.started_at ? new Date(s.started_at * 1000).toLocaleString("en", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "—"}
+              </span>
+              <span style={{ color: C.dim }}>{wallet}</span>
+              <span style={{ color: C.cyan }}>${s.budget_usdc?.toFixed(4)}</span>
+              <span style={{ color: s.spent_usdc > 0 ? C.orange : C.muted }}>${s.spent_usdc?.toFixed(4)}</span>
+              <span style={{ color: C.blue }}>{s.signals_count}</span>
+              <span style={{ color: actionColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={action}>{actionShort}</span>
+            </div>
+          );
+        })}
       </Panel>
 
       {/* Accuracy metrics panel */}

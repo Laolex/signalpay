@@ -155,6 +155,29 @@ async def provider_reputation(provider_id: str):
         return {"provider_id": provider_id, "error": str(e)}
 
 
+@app.get("/economics")
+async def economics_summary():
+    """Lifetime spend analytics — totals, per-provider breakdown, daily history."""
+    from app.economic_memory import get_spend_summary, get_provider_economics
+    try:
+        summary = get_spend_summary()
+        summary["by_provider"] = get_provider_economics()
+        return summary
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/economics/sessions")
+async def economics_sessions(user: str = Query(default="", description="Filter by wallet address"), limit: int = Query(default=20, ge=1, le=100)):
+    """Session history with economic summary, newest first."""
+    from app.economic_memory import get_session_history
+    try:
+        sessions = get_session_history(user_address=user or None, limit=limit)
+        return {"sessions": sessions, "count": len(sessions)}
+    except Exception as e:
+        return {"sessions": [], "error": str(e)}
+
+
 @app.get("/governance/policy")
 async def governance_policy():
     """Active spend governance policy."""
@@ -376,6 +399,10 @@ async def run_agent_sse(body: AgentRunBody = None):
 
         config = AgentConfig()
 
+        # GAP 4: open persistent session record
+        from app.economic_memory import start_session as _start_session
+        econ_session_id = _start_session(user_address or "", config.session_budget)
+
         # Compliance pre-check on user wallet before starting session
         if user_address:
             try:
@@ -420,6 +447,8 @@ async def run_agent_sse(body: AgentRunBody = None):
             "last_executed_action": "",
             "exec_fired": False,
             "session_private_key": session_key,
+            "session_id": econ_session_id,     # GAP 4
+            "user_address": user_address or "", # GAP 4
         }
 
         yield emit("INIT", f"Agent session started. Budget: ${agent_budget:.6f} USDC", initial_state)
