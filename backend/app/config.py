@@ -43,8 +43,8 @@ ARC = ArcConfig()
 TOKENS = Tokens()
 ERC_8004 = ERC8004()
 
-# Populated after deployment
-SIGNAL_REGISTRY_ADDRESS = os.getenv("SIGNAL_REGISTRY_ADDRESS", "")
+# Deployed on Arc Testnet — 2026-05-20
+SIGNAL_REGISTRY_ADDRESS = os.getenv("SIGNAL_REGISTRY_ADDRESS", "0xEB917D183dDB7FdC1883da14dC64b8d20a77e55d")
 
 # Circle credentials
 CIRCLE_API_KEY = os.getenv("CIRCLE_API_KEY", "")

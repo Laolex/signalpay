@@ -202,7 +202,7 @@ Any language, any framework. The payment is a single signed USDC authorization.
 
 | Contract | Address |
 |---|---|
-| **SignalRegistry** | `TBD` — deploy with Foundry |
+| **SignalRegistry** | `0xEB917D183dDB7FdC1883da14dC64b8d20a77e55d` |
 | ERC-8004 IdentityRegistry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 | ERC-8004 ReputationRegistry | `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
 | ERC-8004 ValidationRegistry | `0x8004Cb1BF31DAf7788923b405b754f57acEB4272` |
