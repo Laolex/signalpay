@@ -1258,7 +1258,7 @@ function ProviderDashboard() {
   );
 }
 
-// ── Auction Dashboard (GAP 5) ────────────────────────────────────
+// ── Routing constants (GAP 5 + 6) ────────────────────────────────
 const PROVIDER_IDS = ["price_oracle", "sentiment", "trade_signal", "whale_alert", "wallet_score", "yield_intel"];
 const PROVIDER_LABELS: Record<string, string> = {
   price_oracle: "Price Oracle", sentiment: "Sentiment Engine",
@@ -1270,6 +1270,16 @@ const BASE_PRICES: Record<string, number> = {
   whale_alert: 0.002, wallet_score: 0.005, yield_intel: 0.003,
 };
 
+const CHAIN_INFO: Record<number, { name: string; symbol: string; color: string; bridge: number }> = {
+  5042002: { name: "Arc Testnet",  symbol: "ARC",   color: C.cyan,   bridge: 0.000 },
+  8453:    { name: "Base",         symbol: "BASE",  color: C.blue,   bridge: 0.002 },
+  42161:   { name: "Arbitrum One", symbol: "ARB",   color: C.green,  bridge: 0.003 },
+  10:      { name: "Optimism",     symbol: "OP",    color: C.red,    bridge: 0.003 },
+  137:     { name: "Polygon",      symbol: "MATIC", color: C.purple, bridge: 0.002 },
+  1:       { name: "Ethereum",     symbol: "ETH",   color: "#8888ff", bridge: 0.008 },
+};
+const ARC_CHAIN_ID = 5042002;
+
 function timeLeft(expiresAt: number): string {
   const s = Math.max(0, expiresAt - Math.floor(Date.now() / 1000));
   if (s >= 60) return `${Math.floor(s / 60)}m ${s % 60}s`;
@@ -1277,15 +1287,21 @@ function timeLeft(expiresAt: number): string {
 }
 
 function AuctionDashboard() {
-  const [bids, setBids]       = useState<any[]>([]);
-  const [history, setHistory] = useState<any[]>([]);
-  const [form, setForm]       = useState({ provider_id: "trade_signal", bid_premium_pct: 20, duration_s: 300 });
-  const [status, setStatus]   = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
-  const [tick, setTick]       = useState(0);
+  const [bids, setBids]             = useState<any[]>([]);
+  const [history, setHistory]       = useState<any[]>([]);
+  const [chainProviders, setChainProviders] = useState<Record<string, any>>({});
+  const [chains, setChains]         = useState<any[]>([]);
+  const [form, setForm]             = useState({ provider_id: "trade_signal", bid_premium_pct: 20, duration_s: 300 });
+  const [chainForm, setChainForm]   = useState({ provider_id: "trade_signal", chain_id: ARC_CHAIN_ID });
+  const [status, setStatus]         = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
+  const [chainStatus, setChainStatus] = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
+  const [tick, setTick]             = useState(0);
 
   const loadData = useCallback(() => {
     fetch(`${API_BASE}/auction/bids`).then(r => r.json()).then((d: any) => setBids(d.bids ?? [])).catch(() => {});
     fetch(`${API_BASE}/auction/history?limit=15`).then(r => r.json()).then((d: any) => setHistory(d.history ?? [])).catch(() => {});
+    fetch(`${API_BASE}/chains/providers`).then(r => r.json()).then((d: any) => setChainProviders(d.providers ?? {})).catch(() => {});
+    fetch(`${API_BASE}/chains`).then(r => r.json()).then((d: any) => setChains(d.chains ?? [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1309,6 +1325,24 @@ function AuctionDashboard() {
       loadData();
     } catch (e) {
       setStatus({ type: "err", msg: String(e) });
+    }
+  };
+
+  const submitChainRegister = async () => {
+    setChainStatus({ type: "loading", msg: "Registering…" });
+    try {
+      const resp = await fetch(`${API_BASE}/chains/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chainForm),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { setChainStatus({ type: "err", msg: data.error ?? "Failed" }); return; }
+      const penalty = data.penalty_pct ?? 0;
+      setChainStatus({ type: "ok", msg: `Registered on ${data.chain_name} — ${penalty > 0 ? `-${penalty}% routing penalty` : "native, no penalty"}` });
+      loadData();
+    } catch (e) {
+      setChainStatus({ type: "err", msg: String(e) });
     }
   };
 
@@ -1344,20 +1378,24 @@ function AuctionDashboard() {
           <span style={{ color: C.muted, fontSize: 9 }}>SCORE IMPACT = bid_premium × 15% · MAX +15pts</span>
         </div>
         <div style={{
-          display: "grid", gridTemplateColumns: "48px 1fr 80px 80px 80px 80px 80px",
+          display: "grid", gridTemplateColumns: "44px 1fr 64px 68px 68px 64px 60px 64px",
           padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
         }}>
-          {["TYPE", "PROVIDER", "BASE $", "PREMIUM", "DYN $", "BOOST", "EXPIRES"].map(h => <Label key={h}>{h}</Label>)}
+          {["TYPE", "PROVIDER", "BASE $", "PREM%", "DYN $", "BOOST", "CHAIN", "TTL"].map(h => <Label key={h}>{h}</Label>)}
         </div>
         {PROVIDER_IDS.map((pid, i) => {
-          const catKey = pid.toUpperCase();
-          const color  = CAT_COLOR[catKey] ?? C.text;
-          const tag    = CAT_TAG[catKey]   ?? "SIG";
-          const base   = BASE_PRICES[pid] ?? 0.001;
-          const bid    = bidByProvider[pid];
+          const catKey   = pid.toUpperCase();
+          const color    = CAT_COLOR[catKey] ?? C.text;
+          const tag      = CAT_TAG[catKey]   ?? "SIG";
+          const base     = BASE_PRICES[pid] ?? 0.001;
+          const bid      = bidByProvider[pid];
+          const cpData   = chainProviders[pid];
+          const chainId  = cpData?.chain_id ?? ARC_CHAIN_ID;
+          const chainMeta = CHAIN_INFO[chainId] ?? CHAIN_INFO[ARC_CHAIN_ID];
+          const isNative = chainId === ARC_CHAIN_ID;
           return (
             <div key={pid} style={{
-              display: "grid", gridTemplateColumns: "48px 1fr 80px 80px 80px 80px 80px",
+              display: "grid", gridTemplateColumns: "44px 1fr 64px 68px 68px 64px 60px 64px",
               padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
               background: bid ? `${C.orange}0a` : i % 2 === 0 ? C.panel : C.row,
               fontSize: 10,
@@ -1370,18 +1408,31 @@ function AuctionDashboard() {
                   <span style={{ color: C.orange, fontWeight: 700 }}>+{bid.bid_premium_pct}%</span>
                   <span style={{ color: C.yellow }}>${(base * (1 + bid.bid_premium_pct / 100)).toFixed(4)}</span>
                   <span style={{ color: C.green, fontWeight: 700 }}>+{(bid.score_impact * 100).toFixed(1)}pts</span>
-                  <span style={{ color: bid.seconds_remaining < 60 ? C.red : C.dim }}>
-                    {/* tick forces re-render every second */}
-                    {tick >= 0 && timeLeft(bid.expires_at)}
-                  </span>
                 </>
               ) : (
                 <>
                   <span style={{ color: C.muted }}>—</span>
                   <span style={{ color: C.muted }}>—</span>
                   <span style={{ color: C.muted }}>—</span>
-                  <span style={{ color: C.muted }}>no bid</span>
                 </>
+              )}
+              {/* CHAIN badge */}
+              <span style={{
+                background: chainMeta.color + "22", color: chainMeta.color,
+                fontSize: 8, fontWeight: 700, padding: "2px 4px",
+                alignSelf: "center",
+                outline: isNative ? "none" : `1px solid ${chainMeta.color}44`,
+              }}>
+                {chainMeta.symbol}
+                {!isNative && <span style={{ color: C.red, marginLeft: 3 }}>−{Math.round(Math.min(chainMeta.bridge / 0.01, 0.20) * 100)}%</span>}
+              </span>
+              {/* TTL */}
+              {bid ? (
+                <span style={{ color: bid.seconds_remaining < 60 ? C.red : C.dim, fontSize: 9 }}>
+                  {tick >= 0 && timeLeft(bid.expires_at)}
+                </span>
+              ) : (
+                <span style={{ color: C.muted, fontSize: 9 }}>no bid</span>
               )}
             </div>
           );
@@ -1484,6 +1535,106 @@ function AuctionDashboard() {
             {status.type === "ok" ? "✓ " : "✗ "}{status.msg}
           </div>
         )}
+      </Panel>
+
+      {/* Chain routing panel */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{
+          padding: "8px 12px", borderBottom: `1px solid ${C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <Label>CROSSCHAIN ROUTING — SETTLEMENT CHAIN ASSIGNMENT</Label>
+          <span style={{ color: C.muted, fontSize: 9 }}>BRIDGE PENALTY = min(cost / $0.01, 20%) · MAX −20pts</span>
+        </div>
+
+        {/* Chain summary */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "60px 1fr 80px 80px 70px 60px",
+          padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+        }}>
+          {["CHAIN", "NAME", "BRIDGE $", "PENALTY", "PROVIDERS", "NATIVE"].map(h => <Label key={h}>{h}</Label>)}
+        </div>
+        {chains.map((ch: any, i: number) => {
+          const meta = CHAIN_INFO[ch.chain_id] ?? { color: C.dim, symbol: "?" };
+          return (
+            <div key={ch.chain_id} style={{
+              display: "grid", gridTemplateColumns: "60px 1fr 80px 80px 70px 60px",
+              padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+              background: ch.native ? `${C.cyan}08` : i % 2 === 0 ? C.panel : C.row,
+              fontSize: 10,
+            }}>
+              <span style={{ background: meta.color + "22", color: meta.color, fontSize: 9, fontWeight: 700, padding: "2px 5px" }}>
+                {ch.symbol}
+              </span>
+              <span style={{ color: C.text }}>{ch.name}</span>
+              <span style={{ color: ch.bridge_cost_usdc > 0 ? C.red : C.green }}>
+                {ch.bridge_cost_usdc > 0 ? `$${ch.bridge_cost_usdc.toFixed(3)}` : "free"}
+              </span>
+              <span style={{ color: ch.penalty_pct > 0 ? C.red : C.green, fontWeight: ch.penalty_pct > 0 ? 700 : 400 }}>
+                {ch.penalty_pct > 0 ? `−${ch.penalty_pct}%` : "none"}
+              </span>
+              <span style={{ color: C.dim }}>{ch.provider_count}</span>
+              <span style={{ color: ch.native ? C.green : C.muted, fontSize: 9 }}>{ch.native ? "YES" : "—"}</span>
+            </div>
+          );
+        })}
+
+        {/* Chain assignment form */}
+        <div style={{ padding: "12px 12px 10px", borderTop: `1px solid ${C.border2}` }}>
+          <div style={{ fontSize: 8, color: C.muted, marginBottom: 8 }}>ASSIGN PROVIDER TO CHAIN</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" as const }}>
+            <div>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>PROVIDER</div>
+              <select
+                value={chainForm.provider_id}
+                onChange={e => setChainForm(f => ({ ...f, provider_id: e.target.value }))}
+                style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none" }}
+              >
+                {PROVIDER_IDS.map(pid => <option key={pid} value={pid}>{PROVIDER_LABELS[pid]}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>CHAIN</div>
+              <select
+                value={chainForm.chain_id}
+                onChange={e => setChainForm(f => ({ ...f, chain_id: Number(e.target.value) }))}
+                style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none" }}
+              >
+                {Object.entries(CHAIN_INFO).map(([cid, meta]) => (
+                  <option key={cid} value={Number(cid)}>{meta.symbol} — {meta.name}</option>
+                ))}
+              </select>
+            </div>
+            {/* Penalty preview */}
+            <div style={{ padding: "6px 0" }}>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>ROUTING PENALTY</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: chainForm.chain_id === ARC_CHAIN_ID ? C.green : C.red }}>
+                {chainForm.chain_id === ARC_CHAIN_ID
+                  ? "none"
+                  : `−${Math.round(Math.min((CHAIN_INFO[chainForm.chain_id]?.bridge ?? 0) / 0.01, 0.20) * 100)}%`
+                }
+              </div>
+            </div>
+            <button
+              onClick={submitChainRegister}
+              disabled={chainStatus?.type === "loading"}
+              style={{
+                background: chainStatus?.type === "loading" ? C.border : C.cyan,
+                color: chainStatus?.type === "loading" ? C.dim : "#000",
+                border: "none", padding: "8px 16px", cursor: chainStatus?.type === "loading" ? "default" : "pointer",
+                fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+                transition: "background 0.15s", alignSelf: "flex-end",
+              }}
+            >
+              {chainStatus?.type === "loading" ? "SAVING…" : "REGISTER"}
+            </button>
+          </div>
+          {chainStatus && chainStatus.type !== "loading" && (
+            <div style={{ marginTop: 8, color: chainStatus.type === "ok" ? C.green : C.red, fontSize: 10 }}>
+              {chainStatus.type === "ok" ? "✓ " : "✗ "}{chainStatus.msg}
+            </div>
+          )}
+        </div>
       </Panel>
 
       {/* Bid history */}

@@ -162,6 +162,15 @@ def _build_provider_scores(
     except Exception:
         pass  # fail-open — no auction data means no boost
 
+    # GAP 6: load provider chain assignments once for this scoring pass
+    _ARC = 5042002
+    chain_map: dict[str, int] = {}
+    try:
+        from app.chain_registry import get_all_provider_chains, get_bridge_cost
+        chain_map = get_all_provider_chains()
+    except Exception:
+        pass  # fail-open — unregistered providers default to Arc (zero penalty)
+
     scores: list[ProviderScore] = []
     for p in providers:
         price = p.get("price_usdc", 0.001)
@@ -176,8 +185,17 @@ def _build_provider_scores(
 
         # GAP 5: auction bid → priority_boost + dynamic_price
         bid = bid_map.get(pid)
-        bid_premium  = bid.priority_boost   if bid else 0.0
+        bid_premium   = bid.priority_boost if bid else 0.0
         dynamic_price = round(price * (1 + bid.bid_premium_pct / 100), 6) if bid else 0.0
+
+        # GAP 6: crosschain bridge cost penalty
+        provider_chain = chain_map.get(pid, _ARC)
+        bridge_cost = 0.0
+        if provider_chain != _ARC:
+            try:
+                bridge_cost = get_bridge_cost(_ARC, provider_chain)
+            except Exception:
+                pass
 
         scores.append(ProviderScore(
             provider_id=pid,
@@ -189,7 +207,9 @@ def _build_provider_scores(
             latency=0.8,
             bid_premium=bid_premium,
             dynamic_price=dynamic_price,
-            # GAP 6/10 stubs remain zero
+            chain_id=provider_chain,
+            bridge_cost_usdc=bridge_cost,
+            # GAP 10 stubs remain zero
         ))
 
     scores.sort(key=lambda s: s.composite, reverse=True)

@@ -209,6 +209,62 @@ async def position_performance():
         return {"error": str(e)}
 
 
+@app.get("/chains")
+async def chain_list():
+    """Supported chains + bridge costs from Arc (GAP 6)."""
+    from app.chain_registry import get_chain_summary
+    return {"chains": get_chain_summary()}
+
+
+@app.get("/chains/providers")
+async def provider_chain_map():
+    """Which chain each provider is registered on, with bridge cost info (GAP 6)."""
+    from app.chain_registry import get_all_provider_chains, CHAIN_DEFS, ARC_CHAIN_ID
+    chain_map = get_all_provider_chains()
+    return {
+        "providers": {
+            pid: {
+                "chain_id":         cid,
+                "chain_name":       CHAIN_DEFS.get(cid, {}).get("name", "Unknown"),
+                "symbol":           CHAIN_DEFS.get(cid, {}).get("symbol", "?"),
+                "bridge_cost_usdc": CHAIN_DEFS.get(cid, {}).get("bridge_cost", 0.0),
+                "native":           cid == ARC_CHAIN_ID,
+                "penalty_pct":      round(min(CHAIN_DEFS.get(cid, {}).get("bridge_cost", 0.0) / 0.01, 0.20) * 100, 1),
+            }
+            for pid, cid in chain_map.items()
+        }
+    }
+
+
+class ChainRegisterRequest(BaseModel):
+    provider_id: str
+    chain_id: int
+
+
+@app.post("/chains/register")
+async def register_provider_chain(body: ChainRegisterRequest):
+    """Assign a provider to a settlement chain — affects routing penalty (GAP 6)."""
+    from app.chain_registry import (
+        register_provider_chain as _register,
+        CHAIN_DEFS, get_bridge_cost, ARC_CHAIN_ID,
+    )
+    from fastapi.responses import JSONResponse as _JSONResponse
+    try:
+        _register(body.provider_id, body.chain_id)
+    except ValueError as e:
+        return _JSONResponse(status_code=400, content={"error": str(e)})
+    chain = CHAIN_DEFS.get(body.chain_id, {})
+    bridge = get_bridge_cost(ARC_CHAIN_ID, body.chain_id)
+    return {
+        "provider_id":      body.provider_id,
+        "chain_id":         body.chain_id,
+        "chain_name":       chain.get("name", "Unknown"),
+        "bridge_cost_usdc": bridge,
+        "penalty_pct":      round(min(bridge / 0.01, 0.20) * 100, 1),
+        "native":           body.chain_id == ARC_CHAIN_ID,
+    }
+
+
 class BidRequest(BaseModel):
     provider_id: str
     bid_premium_pct: float   # 1.0 – 50.0
