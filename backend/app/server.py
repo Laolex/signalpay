@@ -28,6 +28,7 @@ from dataclasses import asdict
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.config import ARC, DEFAULT_PRICES
 from app.x402 import X402PaymentMiddleware, ledger
@@ -469,8 +470,6 @@ async def agent_wallet(user: str = Query(default="", description="Connected wall
 class AgentRunRequest(dict):
     pass
 
-
-from pydantic import BaseModel
 
 class AgentRunBody(BaseModel):
     wallet_address: str = ""
