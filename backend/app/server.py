@@ -499,32 +499,16 @@ async def yield_intel():
 
 
 # ── Composite Signal (GAP 11: Agent-as-Provider) ─────────────────────
+# NOTE: specific routes (/earnings, /publish) must come before /{token}
 
-@app.get("/signals/composite/{token}")
-async def composite_signal(token: str, request: Request):
-    """Agent-synthesized composite signal. Costs $0.025 USDC."""
-    from app.composite_store import get_latest_composite, record_composite_sale, COMPOSITE_PRICE_MICRO
-    payment_resp = await check_payment(request, "composite_signal", DEFAULT_PRICES["composite_signal"])
-    if payment_resp:
-        return payment_resp
-    comp = get_latest_composite(token) or get_latest_composite()
-    if not comp:
-        return {"signal": None, "message": "No composite signal published yet — run the agent first"}
-    buyer = request.headers.get("X-Agent-Id", "anonymous")
-    record_composite_sale(buyer, token)
-    from dataclasses import asdict as _asdict
-    sig = generate_composite_signal(token)
+@app.get("/signals/composite/earnings")
+async def composite_earnings():
+    """Provider earnings summary for the agent composite signal."""
+    from app.composite_store import get_earnings_summary, get_composite_history
     return {
-        "signal":    _asdict(sig),
-        "payment":   "confirmed",
-        "price_usdc": DEFAULT_PRICES["composite_signal"] / 1_000_000,
+        **get_earnings_summary(),
+        "history": get_composite_history(limit=10),
     }
-
-
-@app.get("/signals/composite")
-async def composite_signal_latest(request: Request):
-    """Latest composite signal regardless of token. Costs $0.025 USDC."""
-    return await composite_signal("", request)
 
 
 class CompositePublishRequest(BaseModel):
@@ -557,14 +541,31 @@ async def publish_composite_signal(body: CompositePublishRequest):
     return {"published": False}
 
 
-@app.get("/signals/composite/earnings")
-async def composite_earnings():
-    """Provider earnings summary for the agent composite signal."""
-    from app.composite_store import get_earnings_summary, get_composite_history
+@app.get("/signals/composite/{token}")
+async def composite_signal(token: str, request: Request):
+    """Agent-synthesized composite signal. Costs $0.025 USDC."""
+    from app.composite_store import get_latest_composite, record_composite_sale
+    payment_resp = await check_payment(request, "composite_signal", DEFAULT_PRICES["composite_signal"])
+    if payment_resp:
+        return payment_resp
+    comp = get_latest_composite(token) or get_latest_composite()
+    if not comp:
+        return {"signal": None, "message": "No composite signal published yet — run the agent first"}
+    buyer = request.headers.get("X-Agent-Id", "anonymous")
+    record_composite_sale(buyer, token)
+    from dataclasses import asdict as _asdict
+    sig = generate_composite_signal(token)
     return {
-        **get_earnings_summary(),
-        "history": get_composite_history(limit=10),
+        "signal":    _asdict(sig),
+        "payment":   "confirmed",
+        "price_usdc": DEFAULT_PRICES["composite_signal"] / 1_000_000,
     }
+
+
+@app.get("/signals/composite")
+async def composite_signal_latest(request: Request):
+    """Latest composite signal regardless of token. Costs $0.025 USDC."""
+    return await composite_signal("BTC", request)
 
 
 # ── Agent Wallet ─────────────────────────────────────────────────────
