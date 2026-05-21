@@ -498,6 +498,51 @@ async def yield_intel():
     }
 
 
+# ── Capital Pool + Performance Fee (GAP 14) ──────────────────────────
+
+class PoolDepositRequest(BaseModel):
+    address: str
+    amount_usdc: float
+
+
+class PoolWithdrawRequest(BaseModel):
+    address: str
+    amount_usdc: float
+
+
+@app.post("/pool/deposit")
+async def pool_deposit(body: PoolDepositRequest):
+    """Deposit USDC into the agent capital pool."""
+    from app.pool_store import deposit
+    if body.amount_usdc <= 0:
+        return JSONResponse(status_code=400, content={"error": "amount_usdc must be positive"})
+    state = deposit(body.address, body.amount_usdc)
+    return {"deposited": True, "amount_usdc": body.amount_usdc, "pool": state.to_dict()}
+
+
+@app.post("/pool/withdraw")
+async def pool_withdraw(body: PoolWithdrawRequest):
+    """Withdraw USDC from the agent capital pool (pro-rata on NAV)."""
+    from app.pool_store import withdraw
+    state, actual = withdraw(body.address, body.amount_usdc)
+    return {"withdrawn": True, "amount_usdc": actual, "pool": state.to_dict()}
+
+
+@app.get("/pool/status")
+async def pool_status():
+    """Capital pool NAV, HWM, realized P&L, and accrued performance fees."""
+    from app.pool_store import get_pool_state, get_depositors
+    state = get_pool_state()
+    return {**state.to_dict(), "depositors": get_depositors()}
+
+
+@app.get("/pool/transactions")
+async def pool_transactions(limit: int = 20):
+    """Recent pool transactions (deposits, withdrawals, P&L credits, fees)."""
+    from app.pool_store import get_transactions
+    return {"transactions": get_transactions(limit=limit)}
+
+
 # ── Subscription Tier (GAP 13) ───────────────────────────────────────
 
 class SubscribeRequest(BaseModel):

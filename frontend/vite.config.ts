@@ -21,6 +21,7 @@ export default defineConfig({
       "/stake":      "http://localhost:8000",
       "/governance":  "http://localhost:8000",
       "/subscribe":   "http://localhost:8000",
+      "/pool":        "http://localhost:8000",
     },
   },
 });

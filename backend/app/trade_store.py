@@ -190,6 +190,16 @@ def close_position(
     except Exception:
         pass
 
+    # ── GAP 14: credit P&L to capital pool ──
+    try:
+        from app.pool_store import record_trade_pnl
+        record_trade_pnl(
+            pnl_usdc=pnl_usdc,
+            note=f"{row['token']} {direction} close [{close_reason}] P&L ${pnl_usdc:+.4f}",
+        )
+    except Exception:
+        pass
+
     return result
 
 

@@ -1342,6 +1342,10 @@ function AuctionDashboard() {
   const [subForm, setSubForm]                     = useState({ address: "", tier: "basic" });
   const [subStatus, setSubStatus]                 = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
   const [subCheck, setSubCheck]                   = useState<any>(null);
+  const [pool, setPool]                           = useState<any>(null);
+  const [poolTxs, setPoolTxs]                     = useState<any[]>([]);
+  const [poolForm, setPoolForm]                   = useState({ address: "", amount: "10" });
+  const [poolStatus, setPoolStatus]               = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
 
   const TIERS_META: Record<string, { price: string; calls: number; label: string }> = {
     basic:     { price: "$0.10", calls: 50,   label: "Basic" },
@@ -1357,6 +1361,8 @@ function AuctionDashboard() {
     fetch(`${API_BASE}/stake/providers`).then(r => r.json()).then((d: any) => { setStakes(d.stakes ?? []); setSlashHistory(d.slash_history ?? []); }).catch(() => {});
     fetch(`${API_BASE}/signals/composite/earnings`).then(r => r.json()).then(setCompositeEarnings).catch(() => {});
     fetch(`${API_BASE}/subscribe/revenue`).then(r => r.json()).then(setSubRevenue).catch(() => {});
+    fetch(`${API_BASE}/pool/status`).then(r => r.json()).then(setPool).catch(() => {});
+    fetch(`${API_BASE}/pool/transactions?limit=10`).then(r => r.json()).then((d: any) => setPoolTxs(d.transactions ?? [])).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -2103,6 +2109,142 @@ function AuctionDashboard() {
                 <span style={{ color: C.green }}>{s.calls_remaining}</span>
                 <span style={{ color: C.muted }}>{s.calls_used}</span>
                 <span style={{ color: C.muted, fontSize: 9 }}>{s.seconds_remaining ? `${Math.floor(s.seconds_remaining / 60)}m` : "—"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      {/* GAP 14: Capital Pool + Performance Fee */}
+      <Panel>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <Label>CAPITAL POOL — PERFORMANCE FEE (GAP 14)</Label>
+            <span style={{ color: C.muted, fontSize: 9, marginLeft: 8 }}>
+              20% fee on profits above HWM · NAV = deposits + realized P&amp;L − fees
+            </span>
+          </div>
+          {pool && (
+            <div style={{ display: "flex", gap: 16, fontSize: 10 }}>
+              <span style={{ color: C.cyan, fontWeight: 700 }}>NAV ${(pool.nav ?? 0).toFixed(4)}</span>
+              <span style={{ color: C.dim }}>HWM ${(pool.hwm ?? 0).toFixed(4)}</span>
+              <span style={{ color: (pool.realized_pnl ?? 0) >= 0 ? C.green : C.red, fontWeight: 700 }}>
+                P&amp;L {(pool.realized_pnl ?? 0) >= 0 ? "+" : ""}${(pool.realized_pnl ?? 0).toFixed(4)}
+              </span>
+              <span style={{ color: C.orange }}>Fees ${(pool.fees_accrued ?? 0).toFixed(4)}</span>
+            </div>
+          )}
+        </div>
+
+        {/* NAV breakdown */}
+        {pool && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", borderBottom: `1px solid ${C.border}` }}>
+            {[
+              { label: "NAV", val: `$${(pool.nav ?? 0).toFixed(4)}`, color: C.cyan },
+              { label: "DEPOSITED", val: `$${(pool.total_deposited ?? 0).toFixed(4)}`, color: C.text },
+              { label: "REALIZED P&L", val: `${(pool.realized_pnl ?? 0) >= 0 ? "+" : ""}$${(pool.realized_pnl ?? 0).toFixed(4)}`, color: (pool.realized_pnl ?? 0) >= 0 ? C.green : C.red },
+              { label: "FEES ACCRUED", val: `$${(pool.fees_accrued ?? 0).toFixed(4)}`, color: C.orange },
+              { label: "ABOVE HWM", val: `$${(pool.nav_above_hwm ?? 0).toFixed(4)}`, color: (pool.nav_above_hwm ?? 0) > 0 ? C.green : C.muted },
+            ].map(({ label, val, color }) => (
+              <div key={label} style={{ padding: "10px 12px", borderRight: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: 13, color, fontWeight: 700 }}>{val}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Deposit / Withdraw forms */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: `1px solid ${C.border}` }}>
+          {/* Deposit */}
+          <div style={{ padding: "12px", borderRight: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 8, color: C.muted, marginBottom: 8 }}>DEPOSIT TO POOL</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={poolForm.address} onChange={e => setPoolForm(f => ({ ...f, address: e.target.value }))}
+                placeholder="0x address" style={{ flex: 1, background: C.bg, border: `1px solid ${C.border}`, color: C.text, padding: "5px 7px", fontSize: 10, fontFamily: MONO }} />
+              <input value={poolForm.amount} onChange={e => setPoolForm(f => ({ ...f, amount: e.target.value }))}
+                placeholder="USDC" style={{ width: 60, background: C.bg, border: `1px solid ${C.border}`, color: C.text, padding: "5px 7px", fontSize: 10, fontFamily: MONO }} />
+              <button onClick={async () => {
+                setPoolStatus({ type: "loading", msg: "Depositing…" });
+                try {
+                  const r = await fetch(`${API_BASE}/pool/deposit`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ address: poolForm.address.trim(), amount_usdc: parseFloat(poolForm.amount) }),
+                  });
+                  const d = await r.json();
+                  if (r.ok && d.deposited) { setPoolStatus({ type: "ok", msg: `Deposited $${d.amount_usdc} — NAV $${d.pool.nav.toFixed(4)}` }); loadData(); }
+                  else setPoolStatus({ type: "err", msg: d.detail || d.error || "Failed" });
+                } catch (e: any) { setPoolStatus({ type: "err", msg: e.message }); }
+              }} style={{ background: C.green + "22", border: `1px solid ${C.green}`, color: C.green, padding: "5px 10px", fontSize: 10, fontFamily: MONO, cursor: "pointer", fontWeight: 700 }}>
+                DEPOSIT
+              </button>
+            </div>
+          </div>
+          {/* Withdraw */}
+          <div style={{ padding: "12px" }}>
+            <div style={{ fontSize: 8, color: C.muted, marginBottom: 8 }}>WITHDRAW FROM POOL</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input value={poolForm.address} onChange={e => setPoolForm(f => ({ ...f, address: e.target.value }))}
+                placeholder="0x address" style={{ flex: 1, background: C.bg, border: `1px solid ${C.border}`, color: C.text, padding: "5px 7px", fontSize: 10, fontFamily: MONO }} />
+              <input value={poolForm.amount} onChange={e => setPoolForm(f => ({ ...f, amount: e.target.value }))}
+                placeholder="USDC" style={{ width: 60, background: C.bg, border: `1px solid ${C.border}`, color: C.text, padding: "5px 7px", fontSize: 10, fontFamily: MONO }} />
+              <button onClick={async () => {
+                setPoolStatus({ type: "loading", msg: "Withdrawing…" });
+                try {
+                  const r = await fetch(`${API_BASE}/pool/withdraw`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ address: poolForm.address.trim(), amount_usdc: parseFloat(poolForm.amount) }),
+                  });
+                  const d = await r.json();
+                  if (r.ok) { setPoolStatus({ type: "ok", msg: `Withdrew $${d.amount_usdc.toFixed(4)} — NAV $${d.pool.nav.toFixed(4)}` }); loadData(); }
+                  else setPoolStatus({ type: "err", msg: d.detail || d.error || "Failed" });
+                } catch (e: any) { setPoolStatus({ type: "err", msg: e.message }); }
+              }} style={{ background: C.red + "22", border: `1px solid ${C.red}`, color: C.red, padding: "5px 10px", fontSize: 10, fontFamily: MONO, cursor: "pointer", fontWeight: 700 }}>
+                WITHDRAW
+              </button>
+            </div>
+          </div>
+        </div>
+        {poolStatus && (
+          <div style={{ padding: "6px 12px", fontSize: 9, color: poolStatus.type === "ok" ? C.green : poolStatus.type === "err" ? C.red : C.yellow }}>
+            {poolStatus.msg}
+          </div>
+        )}
+
+        {/* Transaction ledger */}
+        {poolTxs.length > 0 && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 80px 80px", padding: "5px 12px", fontSize: 9, color: C.muted, fontWeight: 700 }}>
+              {["TYPE", "NOTE", "AMOUNT", "TIME"].map(h => <span key={h}>{h}</span>)}
+            </div>
+            {poolTxs.map((tx: any, i: number) => {
+              const typeColor: Record<string, string> = { deposit: C.green, withdraw: C.red, pnl: tx.amount_usdc >= 0 ? C.green : C.red, fee: C.orange };
+              return (
+                <div key={tx.id} style={{ display: "grid", gridTemplateColumns: "60px 1fr 80px 80px", padding: "5px 12px", borderTop: `1px solid ${C.border}`, background: i % 2 === 0 ? C.panel : C.row, fontSize: 10 }}>
+                  <span style={{ color: typeColor[tx.type] ?? C.dim, fontWeight: 700, fontSize: 9 }}>{tx.type.toUpperCase()}</span>
+                  <span style={{ color: C.dim, fontSize: 9 }}>{tx.note}</span>
+                  <span style={{ color: typeColor[tx.type] ?? C.dim, fontWeight: 700 }}>
+                    {tx.type === "withdraw" || tx.type === "fee" ? "-" : "+"} ${Math.abs(tx.amount_usdc).toFixed(4)}
+                  </span>
+                  <span style={{ color: C.muted, fontSize: 9 }}>{new Date(tx.created_at * 1000).toLocaleTimeString("en", { hour12: false })}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Depositors */}
+        {pool?.depositors?.length > 0 && (
+          <div style={{ borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 80px", padding: "5px 12px", fontSize: 9, color: C.muted, fontWeight: 700 }}>
+              {["DEPOSITOR", "DEPOSITED", "WITHDRAWN", "NET"].map(h => <span key={h}>{h}</span>)}
+            </div>
+            {pool.depositors.map((d: any) => (
+              <div key={d.address} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 80px", padding: "5px 12px", borderTop: `1px solid ${C.border}`, fontSize: 10 }}>
+                <span style={{ color: C.dim, fontFamily: MONO }}>{d.address.slice(0, 20)}…</span>
+                <span style={{ color: C.green }}>${d.deposited.toFixed(4)}</span>
+                <span style={{ color: C.red }}>${d.withdrawn.toFixed(4)}</span>
+                <span style={{ color: d.net >= 0 ? C.cyan : C.red, fontWeight: 700 }}>${d.net.toFixed(4)}</span>
               </div>
             ))}
           </div>
