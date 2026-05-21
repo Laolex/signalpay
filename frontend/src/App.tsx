@@ -1291,10 +1291,15 @@ function AuctionDashboard() {
   const [history, setHistory]       = useState<any[]>([]);
   const [chainProviders, setChainProviders] = useState<Record<string, any>>({});
   const [chains, setChains]         = useState<any[]>([]);
+  const [stakes, setStakes]         = useState<any[]>([]);
+  const [slashHistory, setSlashHistory] = useState<any[]>([]);
   const [form, setForm]             = useState({ provider_id: "trade_signal", bid_premium_pct: 20, duration_s: 300 });
   const [chainForm, setChainForm]   = useState({ provider_id: "trade_signal", chain_id: ARC_CHAIN_ID });
+  const [stakeForm, setStakeForm]   = useState({ provider_id: "trade_signal", amount_usdc: 10 });
+  const [slashForm, setSlashForm]   = useState({ provider_id: "trade_signal", reason: "", slash_amount: 5 });
   const [status, setStatus]         = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
   const [chainStatus, setChainStatus] = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
+  const [stakeStatus, setStakeStatus] = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
   const [tick, setTick]             = useState(0);
 
   const loadData = useCallback(() => {
@@ -1302,6 +1307,7 @@ function AuctionDashboard() {
     fetch(`${API_BASE}/auction/history?limit=15`).then(r => r.json()).then((d: any) => setHistory(d.history ?? [])).catch(() => {});
     fetch(`${API_BASE}/chains/providers`).then(r => r.json()).then((d: any) => setChainProviders(d.providers ?? {})).catch(() => {});
     fetch(`${API_BASE}/chains`).then(r => r.json()).then((d: any) => setChains(d.chains ?? [])).catch(() => {});
+    fetch(`${API_BASE}/stake/providers`).then(r => r.json()).then((d: any) => { setStakes(d.stakes ?? []); setSlashHistory(d.slash_history ?? []); }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1343,6 +1349,40 @@ function AuctionDashboard() {
       loadData();
     } catch (e) {
       setChainStatus({ type: "err", msg: String(e) });
+    }
+  };
+
+  const submitStakeDeposit = async () => {
+    setStakeStatus({ type: "loading", msg: "Depositing stake…" });
+    try {
+      const resp = await fetch(`${API_BASE}/stake/deposit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(stakeForm),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { setStakeStatus({ type: "err", msg: data.error ?? "Failed" }); return; }
+      setStakeStatus({ type: "ok", msg: `Staked $${data.amount_usdc.toFixed(2)} → +${(data.stake_boost * 100).toFixed(1)}pts boost` });
+      loadData();
+    } catch (e) {
+      setStakeStatus({ type: "err", msg: String(e) });
+    }
+  };
+
+  const submitSlash = async () => {
+    setStakeStatus({ type: "loading", msg: "Slashing provider…" });
+    try {
+      const resp = await fetch(`${API_BASE}/stake/slash`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(slashForm),
+      });
+      const data = await resp.json();
+      if (!resp.ok) { setStakeStatus({ type: "err", msg: data.error ?? "Failed" }); return; }
+      setStakeStatus({ type: "ok", msg: `Slashed — ${data.slash_count} total events | penalty: −${(data.slash_penalty * 100).toFixed(1)}pts` });
+      loadData();
+    } catch (e) {
+      setStakeStatus({ type: "err", msg: String(e) });
     }
   };
 
@@ -1635,6 +1675,192 @@ function AuctionDashboard() {
             </div>
           )}
         </div>
+      </Panel>
+
+      {/* Staking leaderboard + slash */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{
+          padding: "8px 12px", borderBottom: `1px solid ${C.border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <Label>STAKING / SLASHING — PROVIDER COLLATERAL (GAP 10)</Label>
+          <span style={{ color: C.muted, fontSize: 9 }}>STAKE BOOST = min(stake/$100, +10pts) · SLASH = −5pts each · MAX −25pts</span>
+        </div>
+
+        {/* Leaderboard header */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "44px 1fr 80px 60px 60px 60px 70px",
+          padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+        }}>
+          {["TYPE", "PROVIDER", "STAKED $", "BOOST", "SLASHES", "PENALTY", "NET Δ"].map(h => <Label key={h}>{h}</Label>)}
+        </div>
+
+        {PROVIDER_IDS.map((pid, i) => {
+          const catKey = pid.toUpperCase();
+          const color  = CAT_COLOR[catKey] ?? C.text;
+          const tag    = CAT_TAG[catKey]   ?? "SIG";
+          const stake  = stakes.find((s: any) => s.provider_id === pid);
+          const amt    = stake?.amount_usdc ?? 0;
+          const boost  = stake?.stake_boost ?? 0;
+          const slashes = stake?.slash_count ?? 0;
+          const penalty = stake?.slash_penalty ?? 0;
+          const net     = stake?.net_score_delta ?? 0;
+          return (
+            <div key={pid} style={{
+              display: "grid", gridTemplateColumns: "44px 1fr 80px 60px 60px 60px 70px",
+              padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
+              background: amt > 0 ? `${C.purple}0a` : i % 2 === 0 ? C.panel : C.row,
+              fontSize: 10,
+            }}>
+              <span style={{ background: color + "22", color, fontSize: 9, fontWeight: 700, padding: "2px 5px" }}>{tag}</span>
+              <span style={{ color: C.text }}>{PROVIDER_LABELS[pid]}</span>
+              <span style={{ color: amt > 0 ? C.purple : C.muted, fontWeight: amt > 0 ? 700 : 400 }}>
+                {amt > 0 ? `$${amt.toFixed(2)}` : "—"}
+              </span>
+              <span style={{ color: boost > 0 ? C.green : C.muted }}>
+                {boost > 0 ? `+${(boost * 100).toFixed(1)}pts` : "—"}
+              </span>
+              <span style={{ color: slashes > 0 ? C.red : C.muted }}>
+                {slashes > 0 ? slashes : "—"}
+              </span>
+              <span style={{ color: penalty > 0 ? C.red : C.muted, fontWeight: penalty > 0 ? 700 : 400 }}>
+                {penalty > 0 ? `−${(penalty * 100).toFixed(1)}pts` : "—"}
+              </span>
+              <span style={{ color: net > 0 ? C.green : net < 0 ? C.red : C.muted, fontWeight: Math.abs(net) > 0 ? 700 : 400 }}>
+                {net !== 0 ? `${net > 0 ? "+" : ""}${(net * 100).toFixed(1)}pts` : "—"}
+              </span>
+            </div>
+          );
+        })}
+
+        {/* Stake deposit + slash forms */}
+        <div style={{ padding: "12px 12px 10px", borderTop: `1px solid ${C.border2}` }}>
+          <div style={{ fontSize: 8, color: C.muted, marginBottom: 8 }}>DEPOSIT STAKE / SLASH PROVIDER</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" as const }}>
+            {/* Provider */}
+            <div>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>PROVIDER</div>
+              <select
+                value={stakeForm.provider_id}
+                onChange={e => { setStakeForm(f => ({ ...f, provider_id: e.target.value })); setSlashForm(f => ({ ...f, provider_id: e.target.value })); }}
+                style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none" }}
+              >
+                {PROVIDER_IDS.map(pid => <option key={pid} value={pid}>{PROVIDER_LABELS[pid]}</option>)}
+              </select>
+            </div>
+            {/* Stake amount */}
+            <div>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>STAKE USDC</div>
+              <input
+                type="number" min={0.01} step={1}
+                value={stakeForm.amount_usdc}
+                onChange={e => setStakeForm(f => ({ ...f, amount_usdc: Number(e.target.value) }))}
+                style={{ background: C.row, color: C.purple, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 11, fontWeight: 700, padding: "6px 8px", outline: "none", width: 80 }}
+              />
+            </div>
+            {/* Boost preview */}
+            <div style={{ padding: "6px 0" }}>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>BOOST PREVIEW</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.green }}>
+                +{(Math.min(stakeForm.amount_usdc / 100, 0.10) * 100).toFixed(1)}pts
+              </div>
+            </div>
+            <button
+              onClick={submitStakeDeposit}
+              disabled={stakeStatus?.type === "loading"}
+              style={{
+                background: stakeStatus?.type === "loading" ? C.border : C.purple,
+                color: stakeStatus?.type === "loading" ? C.dim : "#fff",
+                border: "none", padding: "8px 14px", cursor: stakeStatus?.type === "loading" ? "default" : "pointer",
+                fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+                transition: "background 0.15s", alignSelf: "flex-end",
+              }}
+            >
+              {stakeStatus?.type === "loading" ? "STAKING…" : "DEPOSIT STAKE"}
+            </button>
+
+            <div style={{ width: 1, height: 32, background: C.border, alignSelf: "flex-end" }} />
+
+            {/* Slash amount */}
+            <div>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>SLASH USDC</div>
+              <input
+                type="number" min={0} step={1}
+                value={slashForm.slash_amount}
+                onChange={e => setSlashForm(f => ({ ...f, slash_amount: Number(e.target.value) }))}
+                style={{ background: C.row, color: C.red, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 11, fontWeight: 700, padding: "6px 8px", outline: "none", width: 80 }}
+              />
+            </div>
+            {/* Reason */}
+            <div>
+              <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>REASON</div>
+              <input
+                type="text" placeholder="bad signal quality"
+                value={slashForm.reason}
+                onChange={e => setSlashForm(f => ({ ...f, reason: e.target.value }))}
+                style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none", width: 160 }}
+              />
+            </div>
+            <button
+              onClick={submitSlash}
+              disabled={stakeStatus?.type === "loading"}
+              style={{
+                background: stakeStatus?.type === "loading" ? C.border : C.red,
+                color: "#fff", border: "none", padding: "8px 14px",
+                cursor: stakeStatus?.type === "loading" ? "default" : "pointer",
+                fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
+                transition: "background 0.15s", alignSelf: "flex-end",
+              }}
+            >
+              {stakeStatus?.type === "loading" ? "SLASHING…" : "SLASH"}
+            </button>
+          </div>
+          {stakeStatus && stakeStatus.type !== "loading" && (
+            <div style={{ marginTop: 8, color: stakeStatus.type === "ok" ? C.green : C.red, fontSize: 10 }}>
+              {stakeStatus.type === "ok" ? "✓ " : "✗ "}{stakeStatus.msg}
+            </div>
+          )}
+        </div>
+      </Panel>
+
+      {/* Slash history */}
+      <Panel style={{ marginBottom: 1 }}>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}` }}>
+          <Label>SLASH HISTORY</Label>
+        </div>
+        <div style={{
+          display: "grid", gridTemplateColumns: "44px 1fr 80px 90px 80px",
+          padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+        }}>
+          {["TYPE", "PROVIDER", "AMT SLASHED", "REASON", "TIME"].map(h => <Label key={h}>{h}</Label>)}
+        </div>
+        {slashHistory.length === 0 && (
+          <div style={{ padding: "20px 12px", color: C.muted, fontSize: 10 }}>
+            No slash events recorded yet
+          </div>
+        )}
+        {slashHistory.map((ev: any, i: number) => {
+          const catKey = (ev.provider_id ?? "").toUpperCase();
+          const color  = CAT_COLOR[catKey] ?? C.text;
+          const tag    = CAT_TAG[catKey]   ?? "SIG";
+          return (
+            <div key={ev.id} style={{
+              display: "grid", gridTemplateColumns: "44px 1fr 80px 90px 80px",
+              padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+              background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+            }}>
+              <span style={{ background: color + "22", color, fontSize: 9, fontWeight: 700, padding: "2px 5px" }}>{tag}</span>
+              <span style={{ color: C.text }}>{PROVIDER_LABELS[ev.provider_id] ?? ev.provider_id}</span>
+              <span style={{ color: C.red, fontWeight: 700 }}>
+                {ev.slash_amount > 0 ? `-$${ev.slash_amount.toFixed(2)}` : "—"}
+              </span>
+              <span style={{ color: C.dim, fontSize: 9 }}>{ev.reason || "—"}</span>
+              <span style={{ color: C.muted, fontSize: 9 }}>
+                {ev.slash_at ? new Date(ev.slash_at * 1000).toLocaleTimeString("en", { hour12: false }) : "—"}
+              </span>
+            </div>
+          );
+        })}
       </Panel>
 
       {/* Bid history */}

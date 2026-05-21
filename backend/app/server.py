@@ -337,6 +337,48 @@ async def treasury_summary():
         return {"error": str(e)}
 
 
+class StakeDepositRequest(BaseModel):
+    provider_id: str
+    amount_usdc: float
+
+
+class StakeSlashRequest(BaseModel):
+    provider_id: str
+    reason: str = ""
+    slash_amount: float = 0.0
+
+
+@app.post("/stake/deposit")
+async def stake_deposit(body: StakeDepositRequest):
+    """Deposit USDC stake for a provider — activates stake_boost in routing (GAP 10)."""
+    from app.stake_store import deposit_stake as _deposit
+    from fastapi.responses import JSONResponse as _JSONResponse
+    if body.amount_usdc <= 0:
+        return _JSONResponse(status_code=400, content={"error": "amount_usdc must be > 0"})
+    record = _deposit(body.provider_id, body.amount_usdc)
+    return record.to_dict()
+
+
+@app.post("/stake/slash")
+async def stake_slash(body: StakeSlashRequest):
+    """Record a slash event against a provider — activates slash_penalty in routing (GAP 10)."""
+    from app.stake_store import slash_provider as _slash
+    record = _slash(body.provider_id, body.reason, body.slash_amount)
+    return record.to_dict()
+
+
+@app.get("/stake/providers")
+async def stake_providers():
+    """Stake leaderboard + recent slash events (GAP 10)."""
+    from app.stake_store import get_all_stakes, get_slash_history
+    stakes = get_all_stakes()
+    return {
+        "stakes": [s.to_dict() for s in stakes],
+        "slash_history": get_slash_history(limit=15),
+        "count": len(stakes),
+    }
+
+
 @app.get("/governance/policy")
 async def governance_policy():
     """Active spend governance policy."""
@@ -606,6 +648,7 @@ async def run_agent_sse(body: AgentRunBody = None):
             "session_private_key": session_key,
             "session_id": econ_session_id,     # GAP 4
             "user_address": user_address or "", # GAP 4
+            "provider_latencies": {},           # GAP 1
         }
 
         yield emit("INIT", f"Agent session started. Budget: ${agent_budget:.6f} USDC", initial_state)

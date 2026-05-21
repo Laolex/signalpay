@@ -34,10 +34,10 @@ from langgraph.graph.message import add_messages
 # All GAP extension points are stubbed here — populating a field
 # activates it in the composite score automatically.
 #
-# GAP 1  (active)  — alpha_quality, cost_efficiency, reputation, latency
-# GAP 5  (stub)    — bid_premium, dynamic_price  → auction/dynamic pricing
-# GAP 6  (stub)    — chain_id, bridge_cost_usdc  → crosschain routing
-# GAP 10 (stub)    — stake_amount_usdc, slash_count → staking/slashing
+# GAP 1  (active)  — alpha_quality, cost_efficiency, reputation, latency (measured)
+# GAP 5  (active)  — bid_premium, dynamic_price  → auction/dynamic pricing
+# GAP 6  (active)  — chain_id, bridge_cost_usdc  → crosschain routing
+# GAP 10 (active)  — stake_amount_usdc, slash_count → staking/slashing
 
 @dataclass
 class ProviderScore:
@@ -66,8 +66,8 @@ class ProviderScore:
     bridge_cost_usdc: float = 0.0
     chain_latency_ms: float = 0.0
 
-    # ── GAP 10: Staking / slashing (stub) ─────────────────────────
-    # Providers bond collateral. Stakers get routing preference.
+    # ── GAP 10: Staking / slashing (active) ──────────────────────────
+    # Providers bond USDC collateral. Stake boosts routing priority.
     # Each slash event decays the score permanently (5% per event).
     stake_amount_usdc: float = 0.0
     slash_count: int = 0
@@ -118,6 +118,7 @@ def _build_provider_scores(
     providers: list[dict],
     reputation_feedback: list[dict],
     budget: float,
+    latency_map: dict[str, float] | None = None,
 ) -> list[ProviderScore]:
     """
     Build a ProviderScore for every affordable provider.
@@ -125,6 +126,7 @@ def _build_provider_scores(
     alpha_quality comes from the reputation_store composite_accuracy (GAP 3 —
     measured hit rate + Sharpe), falling back to ERC-8004 feedback score, then 0.5.
     Category ceiling is the max price in that category (for cost_efficiency).
+    latency_map carries measured response scores (0–1) from prior pay_and_fetch calls.
     """
     if not providers:
         return []
@@ -171,6 +173,14 @@ def _build_provider_scores(
     except Exception:
         pass  # fail-open — unregistered providers default to Arc (zero penalty)
 
+    # GAP 10: load provider stakes once for this scoring pass
+    stake_map: dict[str, any] = {}
+    try:
+        from app.stake_store import get_stake_map
+        stake_map = get_stake_map()
+    except Exception:
+        pass  # fail-open — no stake data means no boost/penalty
+
     scores: list[ProviderScore] = []
     for p in providers:
         price = p.get("price_usdc", 0.001)
@@ -182,6 +192,9 @@ def _build_provider_scores(
 
         # alpha_quality: measured accuracy > ERC-8004 feedback > default
         alpha = accuracy_map.get(pid) or rep_map.get(pid, 0.5)
+
+        # GAP 1: measured latency score from prior calls; default 0.8 until observed
+        latency_score = (latency_map or {}).get(pid, 0.8)
 
         # GAP 5: auction bid → priority_boost + dynamic_price
         bid = bid_map.get(pid)
@@ -197,6 +210,11 @@ def _build_provider_scores(
             except Exception:
                 pass
 
+        # GAP 10: stake boost + slash penalty
+        stake = stake_map.get(pid)
+        stake_amount = stake.amount_usdc if stake else 0.0
+        slash_count  = stake.slash_count  if stake else 0
+
         scores.append(ProviderScore(
             provider_id=pid,
             name=p.get("name", pid),
@@ -204,12 +222,13 @@ def _build_provider_scores(
             alpha_quality=alpha,
             cost_efficiency=cost_eff,
             reputation=rep_map.get(pid, 0.5),
-            latency=0.8,
+            latency=latency_score,
             bid_premium=bid_premium,
             dynamic_price=dynamic_price,
             chain_id=provider_chain,
             bridge_cost_usdc=bridge_cost,
-            # GAP 10 stubs remain zero
+            stake_amount_usdc=stake_amount,
+            slash_count=slash_count,
         ))
 
     scores.sort(key=lambda s: s.composite, reverse=True)
@@ -237,6 +256,7 @@ class AgentState(TypedDict):
     session_private_key: str         # Per-user derived key for EIP-3009 signing
     session_id: str                  # GAP 4: economic memory session id
     user_address: str                # GAP 4: connected wallet (for per-user history)
+    provider_latencies: dict         # GAP 1: pid → latency_score (0–1) from measured calls
 
 
 # ── Agent Configuration ─────────────────────────────────────────────
@@ -303,7 +323,7 @@ def select_provider(state: AgentState) -> AgentState:
 
     WARM_START_SEQ = ["price_oracle", "sentiment", "trade_signal", "whale_alert", "wallet_score"]
 
-    scored = _build_provider_scores(providers, rep, budget)
+    scored = _build_provider_scores(providers, rep, budget, latency_map=state.get("provider_latencies", {}))
     if not scored:
         return {
             **state,
@@ -372,6 +392,9 @@ def pay_and_fetch(state: AgentState) -> AgentState:
     if "{token}" in url:
         token_map = {"price_oracle": "BTC", "sentiment": "ETH", "trade_signal": "BTC"}
         url = url.replace("{token}", token_map.get(category, "BTC"))
+
+    pid = provider.get("id", "")
+    _t0 = time.time()
 
     try:
         # Step 1: Request without payment → 402
@@ -476,6 +499,11 @@ def pay_and_fetch(state: AgentState) -> AgentState:
                 timeout=10,
             )
 
+        # GAP 1: compute latency score from total round-trip time
+        elapsed_ms = (time.time() - _t0) * 1000
+        latency_score = max(0.0, min(1.0, 1.0 - elapsed_ms / 5000.0))
+        updated_latencies = {**state.get("provider_latencies", {}), pid: round(latency_score, 3)}
+
         if resp.status_code == 200:
             data = resp.json()
             signal = data.get("signal", {})
@@ -510,10 +538,11 @@ def pay_and_fetch(state: AgentState) -> AgentState:
                 "signals_collected": state["signals_collected"] + [signal],
                 "budget_remaining": state["budget_remaining"] - price,
                 "total_spent": state["total_spent"] + price,
+                "provider_latencies": updated_latencies,
                 "messages": state["messages"] + [
                     {"role": "assistant", "content": (
                         f"✓ Paid ${price:.4f} → Received {signal.get('category', '?')} signal "
-                        f"(confidence: {signal.get('confidence', '?')})"
+                        f"(confidence: {signal.get('confidence', '?')}, latency: {latency_score:.2f})"
                     )}
                 ],
             }
@@ -1020,6 +1049,10 @@ async def run_agent(config: AgentConfig | None = None):
         "signalpay_api_url": config.signalpay_api_url,
         "last_executed_action": "",
         "exec_fired": False,
+        "session_private_key": "",
+        "session_id": "",
+        "user_address": "",
+        "provider_latencies": {},
     }
 
     print("\n══════════════════════════════════════════════")
