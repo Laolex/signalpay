@@ -38,21 +38,23 @@ const PROVIDERS_STATIC = [
 ];
 
 const CAT_COLOR: Record<string, string> = {
-  PRICE_ORACLE: C.green,
-  SENTIMENT:    C.purple,
-  TRADE_SIGNAL: C.orange,
-  WHALE_ALERT:  C.cyan,
-  WALLET_SCORE: C.yellow,
-  YIELD_INTEL:  C.blue,
+  PRICE_ORACLE:     C.green,
+  SENTIMENT:        C.purple,
+  TRADE_SIGNAL:     C.orange,
+  WHALE_ALERT:      C.cyan,
+  WALLET_SCORE:     C.yellow,
+  YIELD_INTEL:      C.blue,
+  COMPOSITE_SIGNAL: "#e040fb",
 };
 
 const CAT_TAG: Record<string, string> = {
-  PRICE_ORACLE: "PX",
-  SENTIMENT:    "SNT",
-  TRADE_SIGNAL: "TRD",
-  WHALE_ALERT:  "WHL",
-  WALLET_SCORE: "WSC",
-  YIELD_INTEL:  "YLD",
+  PRICE_ORACLE:     "PX",
+  SENTIMENT:        "SNT",
+  TRADE_SIGNAL:     "TRD",
+  WHALE_ALERT:      "WHL",
+  WALLET_SCORE:     "WSC",
+  YIELD_INTEL:      "YLD",
+  COMPOSITE_SIGNAL: "CMP",
 };
 
 const ACTION_COLOR: Record<string, string> = {
@@ -76,6 +78,26 @@ function timeAgo(ms: number) {
 
 function fmt(n: number, dec = 2) { return n.toLocaleString("en", { minimumFractionDigits: dec, maximumFractionDigits: dec }); }
 
+function _inferToken(cat: string, d: any): string {
+  switch (cat) {
+    case "WHALE_ALERT":
+      return d.chain ? d.chain.split("-")[0].toUpperCase() : "WALLET";
+    case "WALLET_SCORE":
+      return "SCORE";
+    case "YIELD_INTEL": {
+      const proto = d.best_protocol || (d.opportunities?.[0]?.protocol) || "";
+      const chain = d.best_chain || (d.opportunities?.[0]?.chain) || "";
+      if (proto) return proto.toUpperCase().slice(0, 6);
+      if (chain) return chain.toUpperCase().slice(0, 6);
+      return "YIELD";
+    }
+    case "COMPOSITE_SIGNAL":
+      return d.token || "SYNTH";
+    default:
+      return "—";
+  }
+}
+
 // ── normalizeSignal ──────────────────────────────────────────────
 function normalizeSignal(raw: any) {
   if (!raw) return null;
@@ -84,7 +106,7 @@ function normalizeSignal(raw: any) {
   return {
     category: cat,
     timestamp: (raw.timestamp || 0) * 1000,
-    token: d.token || raw.token || "?",
+    token: d.token || raw.token || _inferToken(cat, d),
     confidence: raw.confidence || 0,
     data: {
       ...d,
@@ -251,6 +273,11 @@ function SignalRow({ sig, index }: { sig: Sig; index: number }) {
     mainVal = d.best_apy != null ? `${Number(d.best_apy).toFixed(2)}% APY` : "—";
     subVal = d.best_protocol ? `${d.best_protocol} · ${d.best_chain}` : "defillama";
     dirColor = C.blue;
+  } else if (sig.category === "COMPOSITE_SIGNAL") {
+    const act = (d.action ?? "HOLD") as string;
+    mainVal = act.split("—")[0].trim().split(" ").slice(0, 2).join(" ");
+    subVal = `${d.signal_count ?? "?"} signals · $${(d.spend_usdc ?? 0).toFixed(3)} cost`;
+    dirColor = act.startsWith("ACCUMULATE") || act.startsWith("BUY") ? C.green : act.startsWith("SELL") || act.startsWith("REDUCE") ? C.red : C.yellow;
   }
 
   return (
@@ -1301,6 +1328,8 @@ function AuctionDashboard() {
   const [chainStatus, setChainStatus] = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
   const [stakeStatus, setStakeStatus] = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
   const [tick, setTick]             = useState(0);
+  const [compositeEarnings, setCompositeEarnings] = useState<any>(null);
+  const [latestComposite, setLatestComposite]     = useState<any>(null);
 
   const loadData = useCallback(() => {
     fetch(`${API_BASE}/auction/bids`).then(r => r.json()).then((d: any) => setBids(d.bids ?? [])).catch(() => {});
@@ -1308,6 +1337,7 @@ function AuctionDashboard() {
     fetch(`${API_BASE}/chains/providers`).then(r => r.json()).then((d: any) => setChainProviders(d.providers ?? {})).catch(() => {});
     fetch(`${API_BASE}/chains`).then(r => r.json()).then((d: any) => setChains(d.chains ?? [])).catch(() => {});
     fetch(`${API_BASE}/stake/providers`).then(r => r.json()).then((d: any) => { setStakes(d.stakes ?? []); setSlashHistory(d.slash_history ?? []); }).catch(() => {});
+    fetch(`${API_BASE}/signals/composite/earnings`).then(r => r.json()).then(setCompositeEarnings).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1861,6 +1891,69 @@ function AuctionDashboard() {
             </div>
           );
         })}
+      </Panel>
+
+      {/* GAP 11: Composite Signal — Agent-as-Provider Earnings */}
+      <Panel>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <Label>COMPOSITE SIGNAL — AGENT-AS-PROVIDER (GAP 11)</Label>
+            <span style={{ color: C.muted, fontSize: 9, marginLeft: 8 }}>
+              Agent buys raw signals → synthesizes → re-sells at $0.025/call · markup over ~$0.021 cost
+            </span>
+          </div>
+          {compositeEarnings && (
+            <div style={{ display: "flex", gap: 16, fontSize: 10 }}>
+              <span style={{ color: C.green, fontWeight: 700 }}>
+                +${(compositeEarnings.total_earned ?? 0).toFixed(4)} earned
+              </span>
+              <span style={{ color: C.dim }}>{compositeEarnings.total_sales ?? 0} sales</span>
+              <span style={{ color: C.muted }}>$0.025/call</span>
+            </div>
+          )}
+        </div>
+
+        {/* Latest composite */}
+        {compositeEarnings?.history?.length > 0 ? (
+          <div>
+            <div style={{
+              display: "grid", gridTemplateColumns: "60px 80px 1fr 70px 80px 70px",
+              padding: "5px 12px", borderBottom: `1px solid ${C.border2}`,
+              fontSize: 9, color: C.muted, fontWeight: 700, letterSpacing: "0.06em",
+            }}>
+              {["SESSION", "TOKEN", "ACTION", "SIGNALS", "SPENT", "PUBLISHED"].map(h => <span key={h}>{h}</span>)}
+            </div>
+            {compositeEarnings.history.map((h: any, i: number) => (
+              <div key={h.id} style={{
+                display: "grid", gridTemplateColumns: "60px 80px 1fr 70px 80px 70px",
+                padding: "6px 12px", borderBottom: `1px solid ${C.border}`,
+                background: i % 2 === 0 ? C.panel : C.row, fontSize: 10,
+              }}>
+                <span style={{ color: C.muted, fontSize: 9 }}>{(h.session_id ?? "").slice(0, 8)}</span>
+                <span style={{ color: C.cyan, fontWeight: 700 }}>{h.token}</span>
+                <span style={{ color: h.action?.startsWith("ACCUMULATE") || h.action?.startsWith("BUY") ? C.green : h.action?.startsWith("SELL") || h.action?.startsWith("REDUCE") ? C.red : C.yellow, fontWeight: 600 }}>
+                  {(h.action ?? "").split("—")[0].trim().split(" ").slice(0, 3).join(" ")}
+                </span>
+                <span style={{ color: C.dim }}>{h.signal_count} signals</span>
+                <span style={{ color: C.red }}>-${(h.spend_usdc ?? 0).toFixed(4)}</span>
+                <span style={{ color: C.muted, fontSize: 9 }}>
+                  {h.published_at ? new Date(h.published_at * 1000).toLocaleTimeString("en", { hour12: false }) : "—"}
+                </span>
+              </div>
+            ))}
+            <div style={{ padding: "8px 12px", borderTop: `1px solid ${C.border2}`, display: "flex", gap: 24, fontSize: 10 }}>
+              <span style={{ color: C.green }}>Revenue: +${(compositeEarnings.total_earned ?? 0).toFixed(4)} USDC</span>
+              <span style={{ color: C.red }}>Cost: -${(compositeEarnings.history.reduce((s: number, h: any) => s + (h.spend_usdc ?? 0), 0)).toFixed(4)} USDC</span>
+              <span style={{ color: C.cyan, fontWeight: 700 }}>
+                Net: ${((compositeEarnings.total_earned ?? 0) - compositeEarnings.history.reduce((s: number, h: any) => s + (h.spend_usdc ?? 0), 0)).toFixed(4)} USDC
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: "20px 12px", color: C.muted, fontSize: 10 }}>
+            No composite signals published yet — run the agent to generate the first composite
+          </div>
+        )}
       </Panel>
 
       {/* Bid history */}

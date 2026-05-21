@@ -498,6 +498,75 @@ async def yield_intel():
     }
 
 
+# ── Composite Signal (GAP 11: Agent-as-Provider) ─────────────────────
+
+@app.get("/signals/composite/{token}")
+async def composite_signal(token: str, request: Request):
+    """Agent-synthesized composite signal. Costs $0.025 USDC."""
+    from app.composite_store import get_latest_composite, record_composite_sale, COMPOSITE_PRICE_MICRO
+    payment_resp = await check_payment(request, "composite_signal", DEFAULT_PRICES["composite_signal"])
+    if payment_resp:
+        return payment_resp
+    comp = get_latest_composite(token) or get_latest_composite()
+    if not comp:
+        return {"signal": None, "message": "No composite signal published yet — run the agent first"}
+    buyer = request.headers.get("X-Agent-Id", "anonymous")
+    record_composite_sale(buyer, token)
+    from dataclasses import asdict as _asdict
+    sig = generate_composite_signal(token)
+    return {
+        "signal":    _asdict(sig),
+        "payment":   "confirmed",
+        "price_usdc": DEFAULT_PRICES["composite_signal"] / 1_000_000,
+    }
+
+
+@app.get("/signals/composite")
+async def composite_signal_latest(request: Request):
+    """Latest composite signal regardless of token. Costs $0.025 USDC."""
+    return await composite_signal("", request)
+
+
+class CompositePublishRequest(BaseModel):
+    session_id:   str
+    token:        str
+    action:       str
+    confidence:   float
+    rationale:    str
+    signal_count: int
+    spend_usdc:   float
+    raw_signals:  list = []
+
+
+@app.post("/signals/composite/publish")
+async def publish_composite_signal(body: CompositePublishRequest):
+    """Internal: agent publishes its synthesized composite after a session."""
+    from app.composite_store import publish_composite
+    comp = publish_composite(
+        session_id=body.session_id,
+        token=body.token,
+        action=body.action,
+        confidence=body.confidence,
+        rationale=body.rationale,
+        signal_count=body.signal_count,
+        spend_usdc=body.spend_usdc,
+        raw_signals=body.raw_signals,
+    )
+    if comp:
+        return {"published": True, "composite_id": comp.id, "token": comp.token}
+    return {"published": False}
+
+
+@app.get("/signals/composite/earnings")
+async def composite_earnings():
+    """Provider earnings summary for the agent composite signal."""
+    from app.composite_store import get_earnings_summary, get_composite_history
+    return {
+        **get_earnings_summary(),
+        "history": get_composite_history(limit=10),
+    }
+
+
 # ── Agent Wallet ─────────────────────────────────────────────────────
 
 def _read_usdc_balance(address: str) -> tuple[float, int]:

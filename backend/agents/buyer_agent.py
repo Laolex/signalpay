@@ -390,7 +390,7 @@ def pay_and_fetch(state: AgentState) -> AgentState:
     # Handle parameterized routes — pick tokens by category
     category = provider.get("id", "")
     if "{token}" in url:
-        token_map = {"price_oracle": "BTC", "sentiment": "ETH", "trade_signal": "BTC"}
+        token_map = {"price_oracle": "BTC", "sentiment": "BTC", "trade_signal": "BTC"}
         url = url.replace("{token}", token_map.get(category, "BTC"))
 
     pid = provider.get("id", "")
@@ -822,13 +822,13 @@ def execute_action(state: AgentState) -> AgentState:
     conviction  = 0.5
     signal_ids: list[str] = []
 
-    for s in reversed(signals):
-        cat = s.get("category", "")
-        if cat in ("trade_signal", "price_oracle", "sentiment"):
-            tok = s.get("data", {}).get("token")
+    for preferred_cat in ("price_oracle", "trade_signal", "sentiment"):
+        match = next((s for s in signals if s.get("category") == preferred_cat), None)
+        if match:
+            tok = match.get("data", {}).get("token")
             if tok:
                 token = tok
-                break
+            break
 
     for s in reversed(signals):
         if s.get("category") == "price_oracle":
@@ -1069,7 +1069,60 @@ async def run_agent(config: AgentConfig | None = None):
         if role in ("assistant", "ai"):
             print(f"  {content}")
 
+    # ── GAP 11: publish composite signal so other agents can buy it ──
+    _publish_composite(result, config)
+
     return result
+
+
+def _publish_composite(state: dict, config: "AgentConfig"):
+    """After session, synthesize collected signals and publish as a purchasable composite."""
+    import requests as _req
+    signals = state.get("signals_collected", [])
+    if not signals:
+        return
+    action = state.get("last_executed_action", "HOLD")
+    total_spent = state.get("total_spent", 0.0)
+    session_id = state.get("session_id", "")
+
+    # Derive token and confidence from the signal set
+    token = "BTC"
+    confidences = []
+    raw_signal_summaries = []
+    for s in signals:
+        cat = s.get("category", "")
+        d = s.get("data", {})
+        tok = d.get("token")
+        if tok and cat in ("price_oracle", "trade_signal"):
+            token = tok
+        conf = s.get("confidence", 0.0)
+        if conf:
+            confidences.append(conf)
+        raw_signal_summaries.append({"category": cat, "confidence": conf})
+
+    composite_confidence = round(sum(confidences) / len(confidences), 4) if confidences else 0.5
+    rationale = (
+        f"Synthesized from {len(signals)} signals costing ${total_spent:.4f} USDC. "
+        f"Action: {action.split('—')[0].strip() if '—' in action else action}."
+    )
+
+    try:
+        _req.post(
+            f"{config.signalpay_api_url}/signals/composite/publish",
+            json={
+                "session_id":   session_id or "cli",
+                "token":        token,
+                "action":       action,
+                "confidence":   composite_confidence,
+                "rationale":    rationale,
+                "signal_count": len(signals),
+                "spend_usdc":   total_spent,
+                "raw_signals":  raw_signal_summaries,
+            },
+            timeout=5,
+        )
+    except Exception:
+        pass  # non-blocking — never crash the agent on publish failure
 
 
 # ── CLI Entry ───────────────────────────────────────────────────────

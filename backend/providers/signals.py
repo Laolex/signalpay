@@ -615,13 +615,39 @@ def generate_yield_intel() -> Signal:
 
 # ── Provider Factory ───────────────────────────────────────────────
 
+def generate_composite_signal(token: str = "BTC", **_) -> Signal:
+    from app.composite_store import get_latest_composite
+    comp = get_latest_composite(token) or get_latest_composite()
+    if comp:
+        return Signal(
+            category="composite_signal",
+            confidence=comp.confidence,
+            timestamp=comp.published_at,
+            data={
+                "token":        comp.token,
+                "action":       comp.action,
+                "confidence":   comp.confidence,
+                "rationale":    comp.rationale,
+                "signal_count": comp.signal_count,
+                "spend_usdc":   comp.spend_usdc,
+                "published_at": comp.published_at,
+            },
+        )
+    return Signal(
+        category="composite_signal",
+        confidence=0.0,
+        data={"token": token, "action": "NO_DATA", "rationale": "No composite published yet"},
+    )
+
+
 PROVIDERS = {
-    "whale_alert": generate_whale_alert,
-    "price_oracle": generate_price_signal,
-    "wallet_score": generate_wallet_score,
-    "sentiment": generate_sentiment,
-    "trade_signal": generate_trade_signal,
-    "yield_intel": generate_yield_intel,
+    "whale_alert":      generate_whale_alert,
+    "price_oracle":     generate_price_signal,
+    "wallet_score":     generate_wallet_score,
+    "sentiment":        generate_sentiment,
+    "trade_signal":     generate_trade_signal,
+    "yield_intel":      generate_yield_intel,
+    "composite_signal": generate_composite_signal,
 }
 
 

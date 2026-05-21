@@ -77,10 +77,11 @@ AGENT_MASTER_SEED = os.getenv("AGENT_MASTER_SEED", "")
 
 # Provider pricing (USDC 6 decimals)
 DEFAULT_PRICES = {
-    "whale_alert": 2000,        # $0.002 per call
-    "price_oracle": 1000,       # $0.001 per call
-    "wallet_score": 5000,       # $0.005 per call
-    "sentiment": 3000,          # $0.003 per call
-    "trade_signal": 10000,      # $0.010 per call
-    "yield_intel": 3000,        # $0.003 per call
+    "whale_alert":       2000,   # $0.002 per call
+    "price_oracle":      1000,   # $0.001 per call
+    "wallet_score":      5000,   # $0.005 per call
+    "sentiment":         3000,   # $0.003 per call
+    "trade_signal":     10000,   # $0.010 per call
+    "yield_intel":       3000,   # $0.003 per call
+    "composite_signal": 25000,   # $0.025 per call — agent-synthesized alpha
 }
