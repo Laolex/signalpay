@@ -434,8 +434,12 @@ class X402PaymentMiddleware(BaseHTTPMiddleware):
     def set_price(self, route: str, price: int):
         self.route_prices[route] = price
 
+    _FREE_PATHS = {"/signals/composite/earnings", "/signals/composite/publish"}
+
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if not request.url.path.startswith("/signals/"):
+            return await call_next(request)
+        if request.url.path in self._FREE_PATHS:
             return await call_next(request)
 
         price = self.route_prices.get(request.url.path, self.default_price)
