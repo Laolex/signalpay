@@ -846,11 +846,15 @@ async def _reputation_resolver_loop():
             print(f"[reputation] resolver error: {e}")
 
 
+_STOP_LOSS_PCT  = -5.0   # auto-close if unrealized P&L drops below -5%
+_TAKE_PROFIT_PCT = 10.0  # auto-close if unrealized P&L rises above +10%
+
+
 async def _position_tracker_loop():
-    """Background task: update unrealized P&L for open positions every 5 minutes."""
+    """Background: update unrealized P&L every 60s, auto-close on SL/TP breach."""
     import asyncio
     import httpx
-    from app.trade_store import get_open_positions, update_unrealized_pnl
+    from app.trade_store import get_open_positions, update_unrealized_pnl, close_position
 
     _PYTH_IDS = {
         "BTC": "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
@@ -859,20 +863,23 @@ async def _position_tracker_loop():
     }
 
     while True:
-        await asyncio.sleep(300)
+        await asyncio.sleep(60)
         try:
             open_pos = get_open_positions()
             if not open_pos:
                 continue
+
             tokens = set(p["token"] for p in open_pos if p["token"] in _PYTH_IDS)
             if not tokens:
                 continue
+
             ids_qs = "&".join(f"ids[]={_PYTH_IDS[t]}" for t in tokens)
             async with httpx.AsyncClient(timeout=8) as client:
                 resp = await client.get(
                     f"https://hermes.pyth.network/v2/updates/price/latest?{ids_qs}",
                     follow_redirects=True,
                 )
+
             id_to_sym = {v.lower().lstrip("0x"): k for k, v in _PYTH_IDS.items()}
             prices: dict[str, float] = {}
             for feed in resp.json().get("parsed", []):
@@ -880,9 +887,42 @@ async def _position_tracker_loop():
                 if sym:
                     p = feed["price"]
                     prices[sym] = int(p["price"]) * (10 ** int(p["expo"]))
-            if prices:
-                await asyncio.to_thread(update_unrealized_pnl, prices)
-                print(f"[positions] updated P&L for {len(open_pos)} open positions")
+
+            if not prices:
+                continue
+
+            await asyncio.to_thread(update_unrealized_pnl, prices)
+
+            # ── Auto-close: SL / TP ──────────────────────────────────
+            for pos in open_pos:
+                tok = pos["token"]
+                current = prices.get(tok)
+                if current is None:
+                    continue
+                entry = pos["entry_price"]
+                if not entry:
+                    continue
+                if pos["direction"] == "long":
+                    pnl_pct = (current - entry) / entry * 100
+                else:
+                    pnl_pct = (entry - current) / entry * 100
+
+                if pnl_pct <= _STOP_LOSS_PCT:
+                    reason = "SL_HIT"
+                elif pnl_pct >= _TAKE_PROFIT_PCT:
+                    reason = "TP_HIT"
+                else:
+                    continue
+
+                closed = await asyncio.to_thread(close_position, pos["id"], current, reason)
+                if closed:
+                    sign = "+" if closed["pnl_usdc"] >= 0 else ""
+                    print(
+                        f"[positions] AUTO-CLOSE {reason} — {tok} @ ${current:,.2f} "
+                        f"P&L {sign}${closed['pnl_usdc']:.4f} ({sign}{closed['pnl_pct']:.2f}%)"
+                    )
+
+            print(f"[positions] tick — {len(open_pos)} open, prices: {prices}")
         except Exception as e:
             print(f"[positions] tracker error: {e}")
 

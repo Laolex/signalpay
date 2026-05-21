@@ -972,6 +972,22 @@ def summarize(state: AgentState) -> AgentState:
     except Exception:
         pass  # fail-open
 
+    # GAP 12: pull session P&L
+    session_pnl_line = ""
+    try:
+        from app.trade_store import get_session_pnl
+        pnl = get_session_pnl(state.get("session_id", ""))
+        if pnl["closed_trades"] > 0:
+            sign = "+" if pnl["realized_pnl"] >= 0 else ""
+            session_pnl_line = (
+                f"\n  Realized P&L:      {sign}${pnl['realized_pnl']:.4f} USDC "
+                f"({pnl['wins']}W / {pnl['losses']}L)"
+            )
+        if pnl["open_positions"] > 0:
+            session_pnl_line += f"\n  Open positions:    {pnl['open_positions']} (mark-to-market pending)"
+    except Exception:
+        pass
+
     summary = (
         f"\n{'═' * 50}\n"
         f"  SignalPay Agent Session Summary\n"
@@ -980,7 +996,8 @@ def summarize(state: AgentState) -> AgentState:
         f"  Total spent:       ${state['total_spent']:.6f} USDC\n"
         f"  Budget remaining:  ${state['budget_remaining']:.6f} USDC\n"
         f"  Action plan:       {state.get('action_plan', 'None')}\n"
-        f"  Reputation scores: {len(state['reputation_feedback'])} recorded\n"
+        f"  Reputation scores: {len(state['reputation_feedback'])} recorded"
+        f"{session_pnl_line}\n"
         f"{'═' * 50}"
     )
 

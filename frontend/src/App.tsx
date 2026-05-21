@@ -1199,6 +1199,14 @@ function ProviderDashboard() {
                 <span style={{ color: C.cyan, fontWeight: 700 }}>{p.token}</span>
                 <span style={{ color: win ? C.green : C.red, fontSize: 9, fontWeight: 700 }}>
                   {win ? "✓ WIN" : "✗ LOSS"} · {p.action_taken}
+                  {p.close_reason && p.close_reason !== "SIGNAL" && (
+                    <span style={{
+                      marginLeft: 6, fontSize: 8, fontWeight: 700,
+                      color: p.close_reason === "TP_HIT" ? C.green : C.red,
+                      background: (p.close_reason === "TP_HIT" ? C.green : C.red) + "22",
+                      padding: "1px 4px",
+                    }}>{p.close_reason}</span>
+                  )}
                 </span>
                 <span style={{ color: C.dim }}>${(p.entry_price ?? 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 <span style={{ color: C.text }}>${(p.exit_price ?? 0).toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>

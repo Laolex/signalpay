@@ -64,9 +64,15 @@ def _init_db():
                 status          TEXT NOT NULL DEFAULT 'open',  -- 'open' | 'closed'
                 action_taken    TEXT,   -- 'BUY' | 'ACCUMULATE' | 'SELL' | 'REDUCE'
                 conviction      REAL DEFAULT 0.5,
-                driving_signals TEXT    -- comma-sep signal_ids
+                driving_signals TEXT,   -- comma-sep signal_ids
+                close_reason    TEXT    -- 'SIGNAL' | 'SL_HIT' | 'TP_HIT' | 'MANUAL'
             )
         """)
+        # add close_reason if upgrading from old schema
+        try:
+            c.execute("ALTER TABLE positions ADD COLUMN close_reason TEXT")
+        except Exception:
+            pass
         c.execute("CREATE INDEX IF NOT EXISTS idx_pos_status  ON positions(status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_pos_token   ON positions(token, status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_pos_session ON positions(session_id)")
@@ -118,10 +124,14 @@ def open_position(
     return pos_id
 
 
-def close_position(position_id: str, exit_price: float) -> Optional[dict]:
+def close_position(
+    position_id: str,
+    exit_price: float,
+    close_reason: str = "SIGNAL",
+) -> Optional[dict]:
     """
-    Close a position and compute P&L.
-    Returns the closed position dict or None if not found.
+    Close a position and compute P&L. Feeds outcome back into reputation_store.
+    close_reason: 'SIGNAL' | 'SL_HIT' | 'TP_HIT' | 'MANUAL'
     """
     now = int(time.time())
     with _lock:
@@ -147,11 +157,11 @@ def close_position(position_id: str, exit_price: float) -> Optional[dict]:
 
             c.execute("""
                 UPDATE positions
-                SET exit_price=?, exit_at=?, pnl_usdc=?, pnl_pct=?, status='closed'
+                SET exit_price=?, exit_at=?, pnl_usdc=?, pnl_pct=?, status='closed', close_reason=?
                 WHERE id=?
-            """, (exit_price, now, round(pnl_usdc, 6), round(pnl_pct, 4), position_id))
+            """, (exit_price, now, round(pnl_usdc, 6), round(pnl_pct, 4), close_reason, position_id))
 
-            return {
+            result = {
                 "position_id": position_id,
                 "token":       row["token"],
                 "direction":   direction,
@@ -160,13 +170,34 @@ def close_position(position_id: str, exit_price: float) -> Optional[dict]:
                 "pnl_usdc":    round(pnl_usdc, 6),
                 "pnl_pct":     round(pnl_pct, 4),
                 "holding_s":   now - row["entry_at"],
+                "close_reason": close_reason,
+                "session_id":  row["session_id"],
             }
+
+    # ── Reputation feedback (outside lock) ──
+    try:
+        from app.reputation_store import record_trade_outcome
+        hit = pnl_usdc > 0
+        record_trade_outcome(
+            provider_id=row["session_id"] or "agent",
+            category="trade_signal",
+            token=row["token"],
+            direction=direction,
+            confidence=float(row["conviction"] or 0.5),
+            hit=hit,
+            exit_price=exit_price,
+        )
+    except Exception:
+        pass
+
+    return result
 
 
 def close_open_positions_for_token(
     token: str,
     exit_price: float,
     session_id: str = "",
+    close_reason: str = "SIGNAL",
 ) -> list[dict]:
     """Close all open positions for a token. Returns list of closed position dicts."""
     with _conn() as c:
@@ -179,11 +210,34 @@ def close_open_positions_for_token(
 
     results = []
     for pos_id in open_ids:
-        result = close_position(pos_id, exit_price)
+        result = close_position(pos_id, exit_price, close_reason=close_reason)
         if result:
             results.append(result)
 
     return results
+
+
+def get_session_pnl(session_id: str) -> dict:
+    """Realized P&L for a specific agent session."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT pnl_usdc, pnl_pct FROM positions WHERE session_id=? AND status='closed'",
+            (session_id,)
+        ).fetchall()
+        open_count = c.execute(
+            "SELECT COUNT(*) FROM positions WHERE session_id=? AND status='open'",
+            (session_id,)
+        ).fetchone()[0]
+    total_pnl = sum(float(r["pnl_usdc"] or 0) for r in rows)
+    wins = sum(1 for r in rows if (r["pnl_usdc"] or 0) > 0)
+    return {
+        "session_id":       session_id,
+        "closed_trades":    len(rows),
+        "open_positions":   int(open_count),
+        "realized_pnl":     round(total_pnl, 6),
+        "wins":             wins,
+        "losses":           len(rows) - wins,
+    }
 
 
 # ── Live price update (background task) ──────────────────────────────

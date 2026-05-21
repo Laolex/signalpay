@@ -254,6 +254,43 @@ def resolve_pending_predictions() -> int:
     return resolved_count
 
 
+def record_trade_outcome(
+    provider_id: str,
+    category: str,
+    token: str,
+    direction: str,
+    confidence: float,
+    hit: bool,
+    exit_price: float,
+) -> str:
+    """
+    Directly record a resolved outcome from a closed trade position.
+    Used by GAP 12 to close the signal→trade→outcome loop without waiting
+    for the 15-min Pyth resolution window.
+    """
+    import hashlib
+    now = int(time.time())
+    pred_id = hashlib.sha256(
+        f"trade:{provider_id}:{token}:{direction}:{now}".encode()
+    ).hexdigest()[:20]
+    return_val = float(confidence) if hit else -float(confidence) * 0.5
+
+    with _lock:
+        with _conn() as c:
+            c.execute("""
+                INSERT OR IGNORE INTO predictions
+                (id, provider_id, category, token, direction, predicted_price,
+                 confidence, predicted_at, resolve_after, resolved_at,
+                 actual_price, hit, return_val)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                pred_id, provider_id, category, token, direction,
+                exit_price, confidence, now, now, now,
+                exit_price, 1 if hit else 0, round(return_val, 4),
+            ))
+    return pred_id
+
+
 # ── Metrics computation ──────────────────────────────────────────────
 
 @dataclass
