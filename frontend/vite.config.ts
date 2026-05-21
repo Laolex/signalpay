@@ -19,7 +19,8 @@ export default defineConfig({
       "/auction":    "http://localhost:8000",
       "/treasury":   "http://localhost:8000",
       "/stake":      "http://localhost:8000",
-      "/governance": "http://localhost:8000",
+      "/governance":  "http://localhost:8000",
+      "/subscribe":   "http://localhost:8000",
     },
   },
 });

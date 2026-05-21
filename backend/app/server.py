@@ -498,6 +498,67 @@ async def yield_intel():
     }
 
 
+# ── Subscription Tier (GAP 13) ───────────────────────────────────────
+
+class SubscribeRequest(BaseModel):
+    address: str
+    tier: str = "basic"   # basic | pro | unlimited
+
+
+@app.post("/subscribe")
+async def subscribe(body: SubscribeRequest, request: Request):
+    """
+    Pay flat USDC fee to activate a signal subscription.
+    Subscription bypasses per-call x402 payments via X-Subscriber-Address header.
+    """
+    from app.subscription_store import TIERS, activate_subscription
+    tier_cfg = TIERS.get(body.tier)
+    if not tier_cfg:
+        return JSONResponse(status_code=400, content={"error": f"Unknown tier: {body.tier}. Valid: {list(TIERS)}"})
+
+    payment_resp = await check_payment(request, "subscription", tier_cfg["price_micro"])
+    if payment_resp:
+        return payment_resp
+
+    sub = activate_subscription(body.address, body.tier)
+    return {
+        "subscribed":      True,
+        "subscription":    sub.to_dict(),
+        "message": (
+            f"Subscription active — {sub.calls_remaining} calls available "
+            f"for {sub.seconds_remaining // 3600}h. "
+            f"Include X-Subscriber-Address: {body.address} header to bypass per-call payments."
+        ),
+    }
+
+
+@app.get("/subscribe/status")
+async def subscription_status(address: str):
+    """Check active subscription for an address."""
+    from app.subscription_store import get_active_subscription
+    sub = get_active_subscription(address.lower())
+    if not sub:
+        return {"active": False, "address": address.lower()}
+    return {"active": True, **sub.to_dict()}
+
+
+@app.get("/subscribe/tiers")
+async def subscription_tiers():
+    """Available subscription tiers and pricing."""
+    from app.subscription_store import TIERS
+    return {"tiers": TIERS}
+
+
+@app.get("/subscribe/revenue")
+async def subscription_revenue():
+    """Subscription revenue summary and active subscribers."""
+    from app.subscription_store import get_revenue_summary, get_all_active_subscriptions
+    return {
+        **get_revenue_summary(),
+        "active_subscriptions": get_all_active_subscriptions(),
+    }
+
+
 # ── Composite Signal (GAP 11: Agent-as-Provider) ─────────────────────
 # NOTE: specific routes (/earnings, /publish) must come before /{token}
 

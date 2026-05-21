@@ -434,13 +434,29 @@ class X402PaymentMiddleware(BaseHTTPMiddleware):
     def set_price(self, route: str, price: int):
         self.route_prices[route] = price
 
-    _FREE_PATHS = {"/signals/composite/earnings", "/signals/composite/publish"}
+    _FREE_PATHS = {
+        "/signals/composite/earnings",
+        "/signals/composite/publish",
+    }
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         if not request.url.path.startswith("/signals/"):
             return await call_next(request)
         if request.url.path in self._FREE_PATHS:
             return await call_next(request)
+
+        # ── GAP 13: subscription fast-path ────────────────────────────
+        subscriber = request.headers.get("X-Subscriber-Address", "").strip().lower()
+        if subscriber:
+            try:
+                from app.subscription_store import consume_call
+                if consume_call(subscriber):
+                    response = await call_next(request)
+                    response.headers["X-Subscription-Used"] = "true"
+                    response.headers["X-Subscriber"] = subscriber
+                    return response
+            except Exception:
+                pass  # fall through to per-call payment
 
         price = self.route_prices.get(request.url.path, self.default_price)
 

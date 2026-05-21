@@ -1338,6 +1338,16 @@ function AuctionDashboard() {
   const [tick, setTick]             = useState(0);
   const [compositeEarnings, setCompositeEarnings] = useState<any>(null);
   const [latestComposite, setLatestComposite]     = useState<any>(null);
+  const [subRevenue, setSubRevenue]               = useState<any>(null);
+  const [subForm, setSubForm]                     = useState({ address: "", tier: "basic" });
+  const [subStatus, setSubStatus]                 = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
+  const [subCheck, setSubCheck]                   = useState<any>(null);
+
+  const TIERS_META: Record<string, { price: string; calls: number; label: string }> = {
+    basic:     { price: "$0.10", calls: 50,   label: "Basic" },
+    pro:       { price: "$0.50", calls: 300,  label: "Pro" },
+    unlimited: { price: "$2.00", calls: 9999, label: "Unlimited" },
+  };
 
   const loadData = useCallback(() => {
     fetch(`${API_BASE}/auction/bids`).then(r => r.json()).then((d: any) => setBids(d.bids ?? [])).catch(() => {});
@@ -1346,6 +1356,7 @@ function AuctionDashboard() {
     fetch(`${API_BASE}/chains`).then(r => r.json()).then((d: any) => setChains(d.chains ?? [])).catch(() => {});
     fetch(`${API_BASE}/stake/providers`).then(r => r.json()).then((d: any) => { setStakes(d.stakes ?? []); setSlashHistory(d.slash_history ?? []); }).catch(() => {});
     fetch(`${API_BASE}/signals/composite/earnings`).then(r => r.json()).then(setCompositeEarnings).catch(() => {});
+    fetch(`${API_BASE}/subscribe/revenue`).then(r => r.json()).then(setSubRevenue).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1960,6 +1971,140 @@ function AuctionDashboard() {
         ) : (
           <div style={{ padding: "20px 12px", color: C.muted, fontSize: 10 }}>
             No composite signals published yet — run the agent to generate the first composite
+          </div>
+        )}
+      </Panel>
+
+      {/* GAP 13: Subscription Tier */}
+      <Panel>
+        <div style={{ padding: "8px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <Label>SUBSCRIPTION TIER (GAP 13)</Label>
+            <span style={{ color: C.muted, fontSize: 9, marginLeft: 8 }}>
+              Flat USDC unlocks N calls · bypasses per-call x402 via X-Subscriber-Address header
+            </span>
+          </div>
+          {subRevenue && (
+            <div style={{ display: "flex", gap: 16, fontSize: 10 }}>
+              <span style={{ color: C.green, fontWeight: 700 }}>+${(subRevenue.total_revenue ?? 0).toFixed(4)} earned</span>
+              <span style={{ color: C.dim }}>{subRevenue.total_subscriptions ?? 0} subs</span>
+            </div>
+          )}
+        </div>
+
+        {/* Tier cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 1, borderBottom: `1px solid ${C.border}` }}>
+          {Object.entries(TIERS_META).map(([key, t]) => {
+            const byTier = subRevenue?.by_tier?.[key];
+            return (
+              <div key={key} style={{ padding: "12px", borderRight: `1px solid ${C.border}`, background: subForm.tier === key ? C.panel : "transparent" }}
+                onClick={() => setSubForm(f => ({ ...f, tier: key }))} >
+                <div style={{ fontSize: 9, color: C.muted, marginBottom: 4, cursor: "pointer" }}>
+                  {subForm.tier === key ? "▶ " : "  "}{t.label.toUpperCase()}
+                </div>
+                <div style={{ fontSize: 14, color: C.cyan, fontWeight: 700 }}>{t.price}<span style={{ fontSize: 9, color: C.dim }}>/24h</span></div>
+                <div style={{ fontSize: 10, color: C.text, marginTop: 2 }}>{t.calls === 9999 ? "∞" : t.calls} signals</div>
+                {byTier && <div style={{ fontSize: 9, color: C.muted, marginTop: 4 }}>{byTier.count} sold · ${byTier.revenue?.toFixed(2)}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Subscribe form */}
+        <div style={{ padding: "12px", borderBottom: `1px solid ${C.border}` }}>
+          <div style={{ fontSize: 8, color: C.muted, marginBottom: 8 }}>SUBSCRIBE — {TIERS_META[subForm.tier]?.label} · {TIERS_META[subForm.tier]?.price}/24h</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              value={subForm.address}
+              onChange={e => setSubForm(f => ({ ...f, address: e.target.value }))}
+              placeholder="0x agent / wallet address"
+              style={{ flex: 1, minWidth: 240, background: C.bg, border: `1px solid ${C.border}`, color: C.text, padding: "6px 8px", fontSize: 10, fontFamily: MONO }}
+            />
+            <button
+              onClick={async () => {
+                if (!subForm.address.trim()) return;
+                setSubStatus({ type: "loading", msg: "Activating subscription…" });
+                try {
+                  const r = await fetch(`${API_BASE}/subscribe`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ address: subForm.address.trim(), tier: subForm.tier }),
+                  });
+                  const d = await r.json();
+                  if (r.ok && d.subscribed) {
+                    setSubStatus({ type: "ok", msg: d.message });
+                    setSubCheck(d.subscription);
+                    loadData();
+                  } else {
+                    setSubStatus({ type: "err", msg: d.detail || d.error || "Subscription failed" });
+                  }
+                } catch (e: any) {
+                  setSubStatus({ type: "err", msg: e.message });
+                }
+              }}
+              style={{
+                background: C.cyan + "22", border: `1px solid ${C.cyan}`, color: C.cyan,
+                padding: "6px 14px", fontSize: 10, fontFamily: MONO, cursor: "pointer", fontWeight: 700,
+              }}
+            >
+              SUBSCRIBE
+            </button>
+            <button
+              onClick={async () => {
+                if (!subForm.address.trim()) return;
+                const r = await fetch(`${API_BASE}/subscribe/status?address=${encodeURIComponent(subForm.address.trim())}`);
+                const d = await r.json();
+                setSubCheck(d);
+              }}
+              style={{
+                background: "transparent", border: `1px solid ${C.border}`, color: C.dim,
+                padding: "6px 10px", fontSize: 10, fontFamily: MONO, cursor: "pointer",
+              }}
+            >
+              CHECK
+            </button>
+          </div>
+          {subStatus && (
+            <div style={{ marginTop: 6, fontSize: 9, color: subStatus.type === "ok" ? C.green : subStatus.type === "err" ? C.red : C.yellow }}>
+              {subStatus.msg}
+            </div>
+          )}
+        </div>
+
+        {/* Active subscription status */}
+        {subCheck && (
+          <div style={{ padding: "10px 12px" }}>
+            {subCheck.active ? (
+              <div style={{ display: "flex", gap: 20, fontSize: 10, alignItems: "center" }}>
+                <span style={{ color: C.green, fontWeight: 700 }}>ACTIVE</span>
+                <span style={{ color: C.cyan }}>{(TIERS_META[subCheck.tier] ?? {}).label ?? subCheck.tier}</span>
+                <span style={{ color: C.text }}>{subCheck.calls_remaining}/{subCheck.calls_total} calls remaining</span>
+                <span style={{ color: C.muted }}>{subCheck.seconds_remaining ? `${Math.floor(subCheck.seconds_remaining / 60)}m left` : "—"}</span>
+                <span style={{ color: C.dim, fontSize: 9 }}>Header: X-Subscriber-Address: {subCheck.address}</span>
+              </div>
+            ) : (
+              <div style={{ fontSize: 10, color: C.muted }}>
+                No active subscription for {subCheck.address || subForm.address}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Active subscribers list */}
+        {subRevenue?.active_subscriptions?.length > 0 && (
+          <div style={{ borderTop: `1px solid ${C.border}` }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 80px 80px 80px", padding: "5px 12px", fontSize: 9, color: C.muted, fontWeight: 700 }}>
+              {["ADDRESS", "TIER", "CALLS LEFT", "USED", "EXPIRES"].map(h => <span key={h}>{h}</span>)}
+            </div>
+            {subRevenue.active_subscriptions.slice(0, 5).map((s: any, i: number) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 60px 80px 80px 80px", padding: "5px 12px", borderTop: `1px solid ${C.border}`, fontSize: 10 }}>
+                <span style={{ color: C.dim, fontFamily: MONO }}>{s.address.slice(0, 18)}…</span>
+                <span style={{ color: C.cyan }}>{(TIERS_META[s.tier] ?? {}).label ?? s.tier}</span>
+                <span style={{ color: C.green }}>{s.calls_remaining}</span>
+                <span style={{ color: C.muted }}>{s.calls_used}</span>
+                <span style={{ color: C.muted, fontSize: 9 }}>{s.seconds_remaining ? `${Math.floor(s.seconds_remaining / 60)}m` : "—"}</span>
+              </div>
+            ))}
           </div>
         )}
       </Panel>
