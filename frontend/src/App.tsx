@@ -593,7 +593,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
   }, [running, addLog, onSignal]);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 1, height: "calc(100vh - 148px)", background: C.border }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gridTemplateRows: "1fr", gap: 1, height: "calc(100vh - 148px)", background: C.border }}>
 
       {/* Left — terminal log */}
       <div style={{ background: C.bg, display: "flex", flexDirection: "column" }}>
@@ -2830,7 +2830,7 @@ export default function SignalPayApp() {
       </div>
 
       {/* Content */}
-      <div style={tab === "agent" ? {} : { padding: tab === "arch" ? 0 : 16, paddingBottom: 28, maxWidth: tab === "arch" ? "none" : 1100, margin: "0 auto" }}>
+      <div style={tab === "agent" ? {} : tab === "arch" ? { paddingBottom: 28 } : { padding: 16, paddingBottom: 28, maxWidth: 1100, margin: "0 auto" }}>
         {tab === "agent"    && <AgentConsole signals={signals} onSignal={onSignal} />}
         {tab === "explore"  && <SignalExplorer />}
         {tab === "auction"  && <AuctionDashboard />}
