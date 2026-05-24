@@ -2786,7 +2786,7 @@ export default function SignalPayApp() {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <img
-            src="/signal%20pay.png"
+            src="/logo.svg"
             alt="SignalPay"
             style={{ height: 32, width: 32, objectFit: "contain" }}
           />
@@ -2847,7 +2847,7 @@ export default function SignalPayApp() {
         display: "flex", justifyContent: "space-between", padding: "3px 14px",
         fontSize: 9, color: C.muted, fontFamily: MONO,
       }}>
-        <span>SIGNALPAY v0.1.0 — CIRCLE ARC AGENTIC ECONOMY 2026</span>
+        <span>SIGNALPAY v0.1.0 — CIRCLE ARC, AGENTIC ECONOMY 2026</span>
         <span>ARC L1 · CHAIN 5042002 · USDC NATIVE · ZERO-GAS NANOPAYMENTS</span>
       </div>
     </div>
