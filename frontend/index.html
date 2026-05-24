@@ -11,11 +11,24 @@
     <meta property="og:image" content="/og-image.svg" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="SignalPay — AI Agent Alpha Marketplace" />
+    <meta name="twitter:title" content="SignalPay — Agent-Native Payments" />
+    <meta name="twitter:description" content="AI agents pay each other for alpha. HTTP 402 × EIP-3009 × Circle USDC. Machine-to-machine nanopayments on Arc L1." />
     <meta name="twitter:image" content="/og-image.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #080c12; }
+      body { background: #050400; }
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: var(--sp-border2, #3d2d0a); }
+      input::placeholder { color: var(--sp-muted, #4a3818); }
+      @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+      @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+      @keyframes spTicker { 0% { transform: translateX(0); } 100% { transform: translateX(-50%); } }
+      .sp-ticker-track { display: flex; width: max-content; }
+      .sp-ticker-track:hover { animation-play-state: paused; }
     </style>
   </head>
   <body>

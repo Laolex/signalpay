@@ -617,12 +617,19 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
     <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gridTemplateRows: "1fr", gap: 1, height: "calc(100vh - 148px)", background: C.border }}>
 
       {/* Left — terminal log */}
-      <div style={{ background: C.bg, display: "flex", flexDirection: "column" }}>
+      <div style={{ background: C.bg, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
         {/* Stat bar */}
         <div style={{ display: "flex", borderBottom: `1px solid ${C.border}` }}>
-          <StatCell label="BUDGET"  value={`$${budget.toFixed(6)}`}  color={C.cyan}  sub="on-chain" />
+          <StatCell label="BUDGET"  value={`$${budget.toFixed(6)}`}  color={C.cyan}  sub="backend wallet" />
           <StatCell label="SPENT"   value={`$${spent.toFixed(6)}`}   color={spent > 0 ? C.orange : C.dim} sub="this session" />
           <StatCell label="SIGNALS" value={signalCount}               color={C.green} sub="purchased" />
+          {!address && (
+            <div style={{ display: "flex", alignItems: "center", padding: "0 12px" }}>
+              <span style={{ fontSize: 9, fontFamily: MONO, color: C.yellow }}>
+                ⚠ AGENT USES BACKEND KEY — CONNECT WALLET TO TRACK SESSION
+              </span>
+            </div>
+          )}
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", padding: "0 14px", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{
@@ -743,7 +750,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
       </div>
 
       {/* Right — signals + governance */}
-      <div style={{ background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
         <Panel style={{ borderLeft: "none", borderRight: "none", borderTop: "none" }}>
           {/* Signal table header */}
           <div style={{
@@ -2688,19 +2695,7 @@ function TickerStrip() {
 
   return (
     <div style={{ borderBottom: `1px solid ${C.border}`, background: C.panel, overflow: "hidden", position: "relative" }}>
-      <style>{`
-        @keyframes spTicker {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        .sp-ticker-track {
-          display: flex;
-          width: max-content;
-          animation: spTicker ${duration}s linear infinite;
-        }
-        .sp-ticker-track:hover { animation-play-state: paused; }
-      `}</style>
-      <div className="sp-ticker-track">
+      <div className="sp-ticker-track" style={{ animation: `spTicker ${duration}s linear infinite` }}>
         {looped.map(({ sym, price, change }, i) => (
           <div key={i} style={{
             display: "flex", alignItems: "center", gap: 8,
@@ -2733,7 +2728,14 @@ export default function SignalPayApp() {
   const [tab, setTab] = useState("agent");
   const [signals, setSignals] = useState<Sig[]>([]);
   const { address, isConnected } = useAccount();
-  const chainId = useChainId();
+
+  useEffect(() => { window.scrollTo(0, 0); }, [tab]);
+
+  useEffect(() => {
+    document.body.style.background = C.bg;
+    document.documentElement.style.setProperty("--sp-border2", C.border2);
+    document.documentElement.style.setProperty("--sp-muted", C.muted);
+  }, [C.bg, C.border2, C.muted]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2782,17 +2784,6 @@ export default function SignalPayApp() {
 
   return (
     <div style={{ minHeight: "100vh", width: "100%", maxWidth: "100vw", overflowX: "hidden", background: C.bg, color: C.text, fontFamily: MONO }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        html, body { overflow-x: hidden; max-width: 100vw; background: ${C.bg}; }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: ${C.border2}; }
-        input::placeholder { color: ${C.muted}; }
-        @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
-        @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
-      `}</style>
 
       {/* Header */}
       <div style={{
@@ -2846,7 +2837,7 @@ export default function SignalPayApp() {
       </div>
 
       {/* Content */}
-      <div style={tab === "agent" ? {} : tab === "arch" ? { paddingBottom: 28 } : { padding: 16, paddingBottom: 28, maxWidth: 1100, margin: "0 auto" }}>
+      <div style={tab === "agent" ? { overflow: "hidden" } : tab === "arch" ? { paddingBottom: 28 } : { padding: 16, paddingBottom: 28, maxWidth: 1100, margin: "0 auto" }}>
         {tab === "agent"    && <AgentConsole signals={signals} onSignal={onSignal} />}
         {tab === "explore"  && <SignalExplorer />}
         {tab === "auction"  && <AuctionDashboard />}
