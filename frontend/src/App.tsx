@@ -571,7 +571,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
   }, [logs]);
 
   const runAgent = useCallback(async () => {
-    if (running) return;
+    if (running || !address) return;
     setRunning(true); setLogs([]); setBudget(0.1); setSpent(0); setSignalCount(0);
     try {
       const resp = await fetch(`${API_BASE}/agent/run`, {
@@ -641,14 +641,14 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
                 {running ? "RUNNING" : "IDLE"}
               </Label>
             </div>
-            <button onClick={runAgent} disabled={running} style={{
-              background: running ? C.border : C.orange,
-              color: running ? C.dim : "#000",
-              border: "none", padding: "6px 14px", cursor: running ? "default" : "pointer",
+            <button onClick={runAgent} disabled={running || !address} style={{
+              background: running || !address ? C.border : C.orange,
+              color: running || !address ? C.dim : "#000",
+              border: "none", padding: "6px 14px", cursor: running || !address ? "default" : "pointer",
               fontFamily: MONO, fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
               transition: "background 0.15s",
             }}>
-              {running ? "RUNNING..." : "EXECUTE SESSION"}
+              {running ? "RUNNING..." : !address ? "CONNECT WALLET" : "EXECUTE SESSION"}
             </button>
           </div>
         </div>
