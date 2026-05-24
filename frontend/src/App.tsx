@@ -722,7 +722,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
       </div>
 
       {/* Right — signals + governance */}
-      <div style={{ background: C.bg, display: "flex", flexDirection: "column" }}>
+      <div style={{ background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Panel style={{ borderLeft: "none", borderRight: "none", borderTop: "none" }}>
           {/* Signal table header */}
           <div style={{
@@ -2830,7 +2830,7 @@ export default function SignalPayApp() {
       </div>
 
       {/* Content */}
-      <div style={tab === "agent" ? {} : { padding: tab === "arch" ? 0 : 16, maxWidth: tab === "arch" ? "none" : 1100, margin: "0 auto" }}>
+      <div style={tab === "agent" ? {} : { padding: tab === "arch" ? 0 : 16, paddingBottom: 28, maxWidth: tab === "arch" ? "none" : 1100, margin: "0 auto" }}>
         {tab === "agent"    && <AgentConsole signals={signals} onSignal={onSignal} />}
         {tab === "explore"  && <SignalExplorer />}
         {tab === "auction"  && <AuctionDashboard />}
