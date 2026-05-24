@@ -1,41 +1,39 @@
 import { useState } from "react";
 
-const theme = {
-  bg: "#0a0c10",
-  surface: "#0f1318",
-  border: "#1e2530",
-  borderAccent: "#2a3540",
-  arc: "#00d4ff",
-  arcDim: "#00d4ff22",
-  circle: "#4f8ef7",
-  circleDim: "#4f8ef722",
-  agent: "#a78bfa",
-  agentDim: "#a78bfa22",
-  seller: "#34d399",
-  sellerDim: "#34d39922",
-  text: "#e2e8f0",
-  textMuted: "#64748b",
-  textDim: "#94a3b8",
-  warn: "#f59e0b",
-};
+function buildTheme(isDark: boolean) {
+  return isDark ? {
+    bg: "#050400", surface: "#0c0a04", border: "#2a1e06", borderAccent: "#3d2d0a",
+    arc: "#00d4ff", arcDim: "#00d4ff22", circle: "#4f8ef7", circleDim: "#4f8ef722",
+    agent: "#a78bfa", agentDim: "#a78bfa22", seller: "#34d399", sellerDim: "#34d39922",
+    text: "#f0e6cc", textMuted: "#7a6030", textDim: "#a89060", warn: "#f59e0b",
+  } : {
+    bg: "#faf7f0", surface: "#f0ebe0", border: "#d4c4a0", borderAccent: "#c0a878",
+    arc: "#0088aa", arcDim: "#0088aa18", circle: "#1a5abf", circleDim: "#1a5abf18",
+    agent: "#5522bb", agentDim: "#5522bb18", seller: "#007755", sellerDim: "#00775518",
+    text: "#1a1006", textMuted: "#6b5530", textDim: "#8a6840", warn: "#886600",
+  };
+}
 
-const styles = `
+type T = ReturnType<typeof buildTheme>;
+
+function buildStyles(t: T) {
+  return `
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
-    background: ${theme.bg};
-    color: ${theme.text};
+    background: ${t.bg};
+    color: ${t.text};
     font-family: 'IBM Plex Sans', sans-serif;
   }
 
   .root {
     min-height: 100vh;
-    background: ${theme.bg};
+    background: ${t.bg};
     padding: 32px 24px;
     position: relative;
-    overflow: hidden;
+    overflow-x: hidden;
   }
 
   .root::before {
@@ -45,7 +43,7 @@ const styles = `
     left: -20%;
     width: 600px;
     height: 600px;
-    background: radial-gradient(circle, ${theme.arcDim} 0%, transparent 70%);
+    background: radial-gradient(circle, ${t.arcDim} 0%, transparent 70%);
     pointer-events: none;
     z-index: 0;
   }
@@ -57,12 +55,12 @@ const styles = `
     right: -10%;
     width: 500px;
     height: 500px;
-    background: radial-gradient(circle, ${theme.agentDim} 0%, transparent 70%);
+    background: radial-gradient(circle, ${t.agentDim} 0%, transparent 70%);
     pointer-events: none;
     z-index: 0;
   }
 
-  .content { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; }
+  .content { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; overflow-x: hidden; }
 
   .header { margin-bottom: 36px; }
 
@@ -70,9 +68,9 @@ const styles = `
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: ${theme.arcDim};
-    border: 1px solid ${theme.arc}44;
-    color: ${theme.arc};
+    background: ${t.arcDim};
+    border: 1px solid ${t.arc}44;
+    color: ${t.arc};
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
     font-weight: 600;
@@ -85,7 +83,7 @@ const styles = `
 
   .badge-dot {
     width: 6px; height: 6px;
-    background: ${theme.arc};
+    background: ${t.arc};
     border-radius: 50%;
     animation: pulse 2s infinite;
   }
@@ -98,26 +96,26 @@ const styles = `
   .title {
     font-size: 28px;
     font-weight: 600;
-    color: ${theme.text};
+    color: ${t.text};
     letter-spacing: -0.02em;
     margin-bottom: 6px;
   }
 
-  .title span { color: ${theme.arc}; }
+  .title span { color: ${t.arc}; }
 
   .subtitle {
     font-size: 13px;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
     font-family: 'IBM Plex Mono', monospace;
   }
 
   /* LAYER SECTIONS */
   .layer {
     margin-bottom: 12px;
-    border: 1px solid ${theme.border};
+    border: 1px solid ${t.border};
     border-radius: 6px;
     overflow: hidden;
-    background: ${theme.surface};
+    background: ${t.surface};
   }
 
   .layer-header {
@@ -125,7 +123,7 @@ const styles = `
     align-items: center;
     gap: 10px;
     padding: 10px 16px;
-    border-bottom: 1px solid ${theme.border};
+    border-bottom: 1px solid ${t.border};
     cursor: pointer;
     user-select: none;
     transition: background 0.15s;
@@ -143,14 +141,14 @@ const styles = `
 
   .layer-desc {
     font-size: 11px;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
     margin-left: auto;
     font-family: 'IBM Plex Mono', monospace;
   }
 
   .layer-chevron {
     margin-left: 8px;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
     font-size: 10px;
     transition: transform 0.2s;
   }
@@ -166,6 +164,7 @@ const styles = `
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
+    overflow-x: hidden;
   }
 
   .node {
@@ -196,7 +195,7 @@ const styles = `
   .node-detail {
     font-size: 10px;
     font-family: 'IBM Plex Mono', monospace;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
     line-height: 1.5;
   }
 
@@ -214,39 +213,111 @@ const styles = `
 
   /* COLOR VARIANTS */
   .node-arc {
-    background: ${theme.arcDim};
-    border-color: ${theme.arc}44;
+    background: ${t.arcDim};
+    border-color: ${t.arc}44;
   }
-  .node-arc .node-name { color: ${theme.arc}; }
-  .node-arc .node-tag { background: ${theme.arc}22; color: ${theme.arc}; }
+  .node-arc .node-name { color: ${t.arc}; }
+  .node-arc .node-tag { background: ${t.arc}22; color: ${t.arc}; }
 
   .node-circle {
-    background: ${theme.circleDim};
-    border-color: ${theme.circle}44;
+    background: ${t.circleDim};
+    border-color: ${t.circle}44;
   }
-  .node-circle .node-name { color: ${theme.circle}; }
-  .node-circle .node-tag { background: ${theme.circle}22; color: ${theme.circle}; }
+  .node-circle .node-name { color: ${t.circle}; }
+  .node-circle .node-tag { background: ${t.circle}22; color: ${t.circle}; }
 
   .node-agent {
-    background: ${theme.agentDim};
-    border-color: ${theme.agent}44;
+    background: ${t.agentDim};
+    border-color: ${t.agent}44;
   }
-  .node-agent .node-name { color: ${theme.agent}; }
-  .node-agent .node-tag { background: ${theme.agent}22; color: ${theme.agent}; }
+  .node-agent .node-name { color: ${t.agent}; }
+  .node-agent .node-tag { background: ${t.agent}22; color: ${t.agent}; }
 
   .node-seller {
-    background: ${theme.sellerDim};
-    border-color: ${theme.seller}44;
+    background: ${t.sellerDim};
+    border-color: ${t.seller}44;
   }
-  .node-seller .node-name { color: ${theme.seller}; }
-  .node-seller .node-tag { background: ${theme.seller}22; color: ${theme.seller}; }
+  .node-seller .node-name { color: ${t.seller}; }
+  .node-seller .node-tag { background: ${t.seller}22; color: ${t.seller}; }
 
   .node-neutral {
     background: #ffffff06;
-    border-color: ${theme.border};
+    border-color: ${t.border};
   }
-  .node-neutral .node-name { color: ${theme.textDim}; }
-  .node-neutral .node-tag { background: #ffffff0a; color: ${theme.textMuted}; }
+  .node-neutral .node-name { color: ${t.textDim}; }
+  .node-neutral .node-tag { background: #ffffff0a; color: ${t.textMuted}; }
+
+  .gap-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 12px 0;
+  }
+
+  @media (max-width: 640px) {
+    .gap-grid { grid-template-columns: 1fr; }
+  }
+
+  .gap-card {
+    border-radius: 4px;
+    padding: 14px 16px;
+    border: 1px solid;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .gap-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .gap-badge {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    text-transform: uppercase;
+  }
+
+  .gap-title {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .gap-flow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    overflow-x: hidden;
+  }
+
+  .gap-step {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9px;
+    padding: 3px 7px;
+    border-radius: 3px;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+
+  .gap-arrow {
+    font-size: 10px;
+    flex-shrink: 0;
+  }
+
+  .gap-metric {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 6px 10px;
+    border-radius: 3px;
+    margin-top: 6px;
+  }
 
   /* FLOW ARROWS */
   .flow-section {
@@ -256,20 +327,20 @@ const styles = `
   .flow-title {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
     letter-spacing: 0.1em;
     text-transform: uppercase;
     margin-bottom: 10px;
-    padding-left: 4px;
-    border-left: 2px solid ${theme.border};
     padding-left: 8px;
+    border-left: 2px solid ${t.border};
   }
 
   .flow-steps {
     display: flex;
     align-items: stretch;
     gap: 0;
-    overflow-x: auto;
+    flex-wrap: wrap;
+    overflow-x: hidden;
     padding-bottom: 4px;
   }
 
@@ -304,7 +375,7 @@ const styles = `
   .flow-sub {
     font-size: 9px;
     font-family: 'IBM Plex Mono', monospace;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
     margin-top: 2px;
   }
 
@@ -326,8 +397,8 @@ const styles = `
     gap: 20px;
     flex-wrap: wrap;
     padding: 12px 16px;
-    background: ${theme.surface};
-    border: 1px solid ${theme.border};
+    background: ${t.surface};
+    border: 1px solid ${t.border};
     border-radius: 4px;
     margin-top: 20px;
   }
@@ -337,7 +408,7 @@ const styles = `
     align-items: center;
     gap: 6px;
     font-size: 11px;
-    color: ${theme.textDim};
+    color: ${t.textDim};
   }
 
   .legend-dot {
@@ -353,14 +424,14 @@ const styles = `
     display: flex;
     justify-content: space-between;
     align-items: center;
-    flex-wrap: gap;
+    flex-wrap: wrap;
     gap: 8px;
   }
 
   .footer-left {
     font-family: 'IBM Plex Mono', monospace;
     font-size: 10px;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
   }
 
   .footer-right {
@@ -378,13 +449,13 @@ const styles = `
     text-transform: uppercase;
   }
 
-  .chip-arc { background: ${theme.arcDim}; color: ${theme.arc}; border: 1px solid ${theme.arc}33; }
-  .chip-track { background: ${theme.agentDim}; color: ${theme.agent}; border: 1px solid ${theme.agent}33; }
-  .chip-prize { background: ${theme.sellerDim}; color: ${theme.seller}; border: 1px solid ${theme.seller}33; }
+  .chip-arc { background: ${t.arcDim}; color: ${t.arc}; border: 1px solid ${t.arc}33; }
+  .chip-track { background: ${t.agentDim}; color: ${t.agent}; border: 1px solid ${t.agent}33; }
+  .chip-prize { background: ${t.sellerDim}; color: ${t.seller}; border: 1px solid ${t.seller}33; }
 
   .divider {
     height: 1px;
-    background: linear-gradient(90deg, transparent, ${theme.border}, transparent);
+    background: linear-gradient(90deg, transparent, ${t.border}, transparent);
     margin: 8px 0;
   }
 
@@ -403,177 +474,217 @@ const styles = `
     top: 0;
     bottom: 0;
     width: 1px;
-    background: linear-gradient(180deg, ${theme.border}, ${theme.borderAccent});
+    background: linear-gradient(180deg, ${t.border}, ${t.borderAccent});
   }
 
   .connector-label {
-    background: ${theme.surface};
-    border: 1px solid ${theme.border};
+    background: ${t.surface};
+    border: 1px solid ${t.border};
     border-radius: 20px;
     padding: 2px 10px;
     font-size: 9px;
     font-family: 'IBM Plex Mono', monospace;
-    color: ${theme.textMuted};
+    color: ${t.textMuted};
     position: relative;
     z-index: 1;
   }
 `;
+}
 
-const layers = [
-  {
-    id: "consumer",
-    label: "Consumer Layer",
-    desc: "User + Autonomous Agent",
-    color: theme.agent,
-    nodes: [
-      {
-        type: "neutral",
-        icon: "🖥️",
-        name: "React Dashboard",
-        detail: "Bloomberg terminal UI\nSSE agent log stream\nSignal explorer + governance",
-        tag: "React + Vite + wagmi v2",
-      },
-      {
-        type: "agent",
-        icon: "💰",
-        name: "User Wallet (MetaMask)",
-        detail: "Connects via RainbowKit\nAny Arc testnet address\nDeposits USDC to their agent wallet",
-        tag: "EIP-1193 / wagmi",
-      },
-      {
-        type: "arc",
-        icon: "🔑",
-        name: "Per-User Key Derivation",
-        detail: "HMAC-SHA256(userAddr, masterSeed)\nDeterministic — same user, same key\nBackend-side · never exposed",
-        tag: "AGENT_MASTER_SEED",
-      },
-      {
-        type: "agent",
-        icon: "🤖",
-        name: "Agent Wallet (per-user EOA)",
-        detail: "Unique address per connected wallet\nHolds user's USDC budget on Arc\nSigns all EIP-3009 authorizations",
-        tag: "Derived EOA",
-      },
-      {
-        type: "agent",
-        icon: "🧠",
-        name: "LangGraph Buyer Agent",
-        detail: "8-node graph\nDiscover → Select → Pay → Reputation\n→ Analyze → Execute → Loop",
-        tag: "Python / LangGraph",
-      },
-    ],
-  },
-  {
-    id: "payment",
-    label: "Payment Layer",
-    desc: "HTTP 402 → EIP-3009 → Circle settle",
-    color: theme.arc,
-    nodes: [
-      {
-        type: "arc",
-        icon: "🔗",
-        name: "HTTP 402 Gate",
-        detail: "Every signal endpoint gated\nReturns 402 + X-Payment-Info header\nSignal locked until payment confirmed",
-        tag: "x402 Protocol",
-      },
-      {
-        type: "arc",
-        icon: "✍️",
-        name: "EIP-3009 Signing",
-        detail: "TransferWithAuthorization\nEIP-712 typed data signature\nNonce: keccak256(uuid)",
-        tag: "EIP-3009 / EIP-712",
-      },
-      {
-        type: "circle",
-        icon: "⚡",
-        name: "Circle Facilitator",
-        detail: "Verifies EIP-3009 signature\nSettles USDC on Arc\nReturns X-Payment-Response",
-        tag: "Circle Gateway",
-      },
-    ],
-  },
-  {
-    id: "backend",
-    label: "Backend Layer",
-    desc: "FastAPI + Arc + ERC-8004",
-    color: theme.circle,
-    nodes: [
-      {
-        type: "circle",
-        icon: "🚀",
-        name: "FastAPI Backend",
-        detail: "Signal registry endpoints\nPayment verification\nSSE agent loop streaming",
-        tag: "FastAPI / Python",
-      },
-      {
-        type: "arc",
-        icon: "📋",
-        name: "ERC-8004 Registry",
-        detail: "Identity / Reputation / Validation\nOn-chain provider reputation writes\nArc tx hash per signal call",
-        tag: "Arc Smart Contracts",
-      },
-      {
-        type: "arc",
-        icon: "💎",
-        name: "USDC on Arc",
-        detail: "0x3600...0000\nSub-second finality\nChain ID 5042002",
-        tag: "Arc L1 / USDC",
-      },
-    ],
-  },
-  {
-    id: "signals",
-    label: "Signal Provider Layer",
-    desc: "6 live data sources",
-    color: theme.seller,
-    nodes: [
-      {
-        type: "seller",
-        icon: "📡",
-        name: "Whale Alert + Sentiment",
-        detail: "Large on-chain transfers\nFear & Greed index\n$0.002 · $0.003 per call",
-        tag: "Simulated / Live",
-      },
-      {
-        type: "arc",
-        icon: "🔮",
-        name: "Price Oracle (Pyth)",
-        detail: "BTC · ETH · SOL · USDC\nPyth Hermes REST API\nconf=0.99 · 15s TTL cache",
-        tag: "Pyth Network",
-      },
-      {
-        type: "seller",
-        icon: "🎯",
-        name: "Trade Signal + Wallet Score",
-        detail: "Composite RSI/MACD signal\nOn-chain wallet risk tier\n$0.010 · $0.005 per call",
-        tag: "Simulated / Live",
-      },
-      {
-        type: "seller",
-        icon: "🌾",
-        name: "Yield Intel (DefiLlama)",
-        detail: "USDC stablecoin pools\nAPY 0.1–50% · TVL > $5M\nTop 5 by yield · 300s cache",
-        tag: "DefiLlama API",
-      },
-    ],
-  },
-];
-
-const flowSteps = [
-  { num: "01", label: "Read on-chain balance", sub: "Arc balanceOf", color: theme.agent },
-  { num: "02", label: "Discover providers", sub: "/discovery/providers", color: theme.agent },
-  { num: "03", label: "Select signal", sub: "LangGraph node", color: theme.agent },
-  { num: "04", label: "← HTTP 402", sub: "Payment required", color: theme.arc },
-  { num: "05", label: "EIP-3009 signed", sub: "Agent wallet key", color: theme.circle },
-  { num: "06", label: "→ Retry + X-Payment", sub: "Circle settle", color: theme.arc },
-  { num: "07", label: "Signal unlocked", sub: "FastAPI delivers", color: theme.circle },
-  { num: "08", label: "ERC-8004 reputation", sub: "Arc tx write", color: theme.arc },
-  { num: "09", label: "Analyze + execute", sub: "Action decision", color: theme.agent },
-  { num: "10", label: "Loop / summarize", sub: "Next signal", color: theme.seller },
-];
-
-export default function SignalPayDiagram() {
+export default function SignalPayDiagram({ isDark }: { isDark: boolean }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const theme = buildTheme(isDark);
+  const styles = buildStyles(theme);
+
+  const layers = [
+    {
+      id: "consumer",
+      label: "Consumer Layer",
+      desc: "User + Autonomous Agent",
+      color: theme.agent,
+      nodes: [
+        {
+          type: "neutral",
+          icon: "🖥️",
+          name: "React Dashboard",
+          detail: "Bloomberg terminal UI\nSSE agent log stream\nSignal explorer + governance",
+          tag: "React + Vite + wagmi v2",
+        },
+        {
+          type: "agent",
+          icon: "💰",
+          name: "User Wallet (MetaMask)",
+          detail: "Connects via RainbowKit\nAny Arc testnet address\nDeposits USDC to their agent wallet",
+          tag: "EIP-1193 / wagmi",
+        },
+        {
+          type: "arc",
+          icon: "🔑",
+          name: "Per-User Key Derivation",
+          detail: "HMAC-SHA256(userAddr, masterSeed)\nDeterministic — same user, same key\nBackend-side · never exposed",
+          tag: "AGENT_MASTER_SEED",
+        },
+        {
+          type: "agent",
+          icon: "🤖",
+          name: "Agent Wallet (per-user EOA)",
+          detail: "Unique address per connected wallet\nHolds user's USDC budget on Arc\nSigns all EIP-3009 authorizations",
+          tag: "Derived EOA",
+        },
+        {
+          type: "agent",
+          icon: "🧠",
+          name: "LangGraph Buyer Agent",
+          detail: "8-node graph\nDiscover → Select → Pay → Reputation\n→ Analyze → Execute → Loop",
+          tag: "Python / LangGraph",
+        },
+      ],
+    },
+    {
+      id: "payment",
+      label: "Payment Layer",
+      desc: "HTTP 402 → EIP-3009 → Circle settle",
+      color: theme.arc,
+      nodes: [
+        {
+          type: "arc",
+          icon: "🔗",
+          name: "HTTP 402 Gate",
+          detail: "Every signal endpoint gated\nReturns 402 + X-Payment-Info header\nSignal locked until payment confirmed",
+          tag: "x402 Protocol",
+        },
+        {
+          type: "arc",
+          icon: "✍️",
+          name: "EIP-3009 Signing",
+          detail: "TransferWithAuthorization\nEIP-712 typed data signature\nNonce: keccak256(uuid)",
+          tag: "EIP-3009 / EIP-712",
+        },
+        {
+          type: "circle",
+          icon: "⚡",
+          name: "Circle Facilitator",
+          detail: "Verifies EIP-3009 signature\nSettles USDC on Arc\nReturns X-Payment-Response",
+          tag: "Circle Gateway",
+        },
+      ],
+    },
+    {
+      id: "backend",
+      label: "Backend Layer",
+      desc: "FastAPI + Arc + ERC-8004",
+      color: theme.circle,
+      nodes: [
+        {
+          type: "circle",
+          icon: "🚀",
+          name: "FastAPI Backend",
+          detail: "Signal registry endpoints\nPayment verification\nSSE agent loop streaming",
+          tag: "FastAPI / Python",
+        },
+        {
+          type: "arc",
+          icon: "📋",
+          name: "ERC-8004 Registry",
+          detail: "Identity / Reputation / Validation\nOn-chain provider reputation writes\nArc tx hash per signal call",
+          tag: "Arc Smart Contracts",
+        },
+        {
+          type: "arc",
+          icon: "💎",
+          name: "USDC on Arc",
+          detail: "0x3600...0000\nSub-second finality\nChain ID 5042002",
+          tag: "Arc L1 / USDC",
+        },
+      ],
+    },
+    {
+      id: "revenue",
+      label: "Revenue Mechanism Layer",
+      desc: "composite resale · trade loop · subscriptions · capital pool",
+      color: theme.seller,
+      nodes: [
+        {
+          type: "seller",
+          icon: "🔄",
+          name: "Composite Signal Resale",
+          detail: "Agent buys 5 raw signals ~$0.021\nSynthesizes → publishes composite\nOther agents pay $0.025 via x402\nMargin $0.004 per resale",
+          tag: "composite_store.py",
+        },
+        {
+          type: "agent",
+          icon: "📈",
+          name: "Auto-Close Trade Loop",
+          detail: "Signal → open $10 sim position\nPyth price update every 60s\nSL −5% · TP +10% auto-close\nRealized PnL → pool credit",
+          tag: "trade_store.py",
+        },
+        {
+          type: "circle",
+          icon: "🎫",
+          name: "Subscription Tier",
+          detail: "Basic $0.10/50 calls · 24h\nPro $0.50/300 calls · 24h\nUnlimited $2.00/9999 calls\nX-Subscriber-Address bypass",
+          tag: "subscription_store.py",
+        },
+        {
+          type: "arc",
+          icon: "🏦",
+          name: "Capital Pool + Perf Fee",
+          detail: "Depositors → pool USDC\nNAV = deposited + PnL − fees\nHigh-water mark tracks peak NAV\n20% perf fee on profits above HWM",
+          tag: "pool_store.py",
+        },
+      ],
+    },
+    {
+      id: "signals",
+      label: "Signal Provider Layer",
+      desc: "6 live data sources",
+      color: theme.seller,
+      nodes: [
+        {
+          type: "seller",
+          icon: "📡",
+          name: "Whale Alert + Sentiment",
+          detail: "Large on-chain transfers\nFear & Greed index\n$0.002 · $0.003 per call",
+          tag: "Simulated / Live",
+        },
+        {
+          type: "arc",
+          icon: "🔮",
+          name: "Price Oracle (Pyth)",
+          detail: "BTC · ETH · SOL · USDC\nPyth Hermes REST API\nconf=0.99 · 15s TTL cache",
+          tag: "Pyth Network",
+        },
+        {
+          type: "seller",
+          icon: "🎯",
+          name: "Trade Signal + Wallet Score",
+          detail: "Composite RSI/MACD signal\nOn-chain wallet risk tier\n$0.010 · $0.005 per call",
+          tag: "Simulated / Live",
+        },
+        {
+          type: "seller",
+          icon: "🌾",
+          name: "Yield Intel (DefiLlama)",
+          detail: "USDC stablecoin pools\nAPY 0.1–50% · TVL > $5M\nTop 5 by yield · 300s cache",
+          tag: "DefiLlama API",
+        },
+      ],
+    },
+  ];
+
+  const flowSteps = [
+    { num: "01", label: "Read on-chain balance", sub: "Arc balanceOf", color: theme.agent },
+    { num: "02", label: "Discover providers", sub: "/discovery/providers", color: theme.agent },
+    { num: "03", label: "Select signal", sub: "LangGraph node", color: theme.agent },
+    { num: "04", label: "← HTTP 402", sub: "Payment required", color: theme.arc },
+    { num: "05", label: "EIP-3009 signed", sub: "Agent wallet key", color: theme.circle },
+    { num: "06", label: "→ Retry + X-Payment", sub: "Circle settle", color: theme.arc },
+    { num: "07", label: "Signal unlocked", sub: "FastAPI delivers", color: theme.circle },
+    { num: "08", label: "ERC-8004 reputation", sub: "Arc tx write", color: theme.arc },
+    { num: "09", label: "Analyze + execute", sub: "Action decision", color: theme.agent },
+    { num: "10", label: "Loop / summarize", sub: "Next signal", color: theme.seller },
+  ];
 
   const toggle = (id: string) => setCollapsed((s) => ({ ...s, [id]: !s[id] }));
 
@@ -743,6 +854,130 @@ export default function SignalPayDiagram() {
             </div>
           </div>
 
+          {/* REVENUE MECHANISMS DETAIL */}
+          <div style={{ margin: "12px 0" }}>
+            <div className="flow-title" style={{ marginBottom: 10 }}>// Revenue Architecture</div>
+            <div className="gap-grid">
+
+              {/* Composite Resale */}
+              <div className="gap-card" style={{ borderColor: theme.seller + "44", background: theme.sellerDim }}>
+                <div className="gap-card-header">
+                  <span className="gap-title" style={{ color: theme.seller }}>Composite Signal Resale</span>
+                </div>
+                <div className="gap-flow">
+                  {[
+                    { text: "Buy 5 raw signals", color: theme.agent },
+                    "→",
+                    { text: "Synthesize", color: theme.seller },
+                    "→",
+                    { text: "POST /signals/composite/publish", color: theme.seller },
+                    "→",
+                    { text: "Agent pays $0.025 via x402", color: theme.circle },
+                    "→",
+                    { text: "$0.004 margin", color: theme.seller },
+                  ].map((s, i) =>
+                    typeof s === "string" ? (
+                      <span key={i} className="gap-arrow" style={{ color: theme.textMuted }}>{s}</span>
+                    ) : (
+                      <span key={i} className="gap-step" style={{ borderColor: s.color + "55", color: s.color, background: s.color + "11" }}>{s.text}</span>
+                    )
+                  )}
+                </div>
+                <div className="gap-metric" style={{ background: theme.seller + "11", color: theme.seller }}>
+                  cost: ~$0.021 · resale: $0.025 · GET /signals/composite/&#123;token&#125;
+                </div>
+              </div>
+
+              {/* Auto-Close Loop */}
+              <div className="gap-card" style={{ borderColor: theme.agent + "44", background: theme.agentDim }}>
+                <div className="gap-card-header">
+                  <span className="gap-title" style={{ color: theme.agent }}>Auto-Close Trade Loop</span>
+                </div>
+                <div className="gap-flow">
+                  {[
+                    { text: "Signal BUY/SELL", color: theme.agent },
+                    "→",
+                    { text: "Open $10 sim position", color: theme.agent },
+                    "→",
+                    { text: "Pyth price / 60s", color: theme.arc },
+                    "→",
+                    { text: "SL −5% | TP +10%", color: theme.agent },
+                    "→",
+                    { text: "Realized PnL → pool", color: theme.arc },
+                  ].map((s, i) =>
+                    typeof s === "string" ? (
+                      <span key={i} className="gap-arrow" style={{ color: theme.textMuted }}>{s}</span>
+                    ) : (
+                      <span key={i} className="gap-step" style={{ borderColor: s.color + "55", color: s.color, background: s.color + "11" }}>{s.text}</span>
+                    )
+                  )}
+                </div>
+                <div className="gap-metric" style={{ background: theme.agent + "11", color: theme.agent }}>
+                  size: $10 USDC notional · close_reason: SIGNAL | SL_HIT | TP_HIT
+                </div>
+              </div>
+
+              {/* Subscription Tier */}
+              <div className="gap-card" style={{ borderColor: theme.circle + "44", background: theme.circleDim }}>
+                <div className="gap-card-header">
+                  <span className="gap-title" style={{ color: theme.circle }}>Subscription Tier Fast-Path</span>
+                </div>
+                <div className="gap-flow">
+                  {[
+                    { text: "POST /subscribe", color: theme.circle },
+                    "→",
+                    { text: "USDC flat fee", color: theme.arc },
+                    "→",
+                    { text: "N calls / 24h stored", color: theme.circle },
+                    "→",
+                    { text: "X-Subscriber-Address header", color: theme.agent },
+                    "→",
+                    { text: "bypass x402 per-call", color: theme.seller },
+                  ].map((s, i) =>
+                    typeof s === "string" ? (
+                      <span key={i} className="gap-arrow" style={{ color: theme.textMuted }}>{s}</span>
+                    ) : (
+                      <span key={i} className="gap-step" style={{ borderColor: s.color + "55", color: s.color, background: s.color + "11" }}>{s.text}</span>
+                    )
+                  )}
+                </div>
+                <div className="gap-metric" style={{ background: theme.circle + "11", color: theme.circle }}>
+                  Basic $0.10/50 · Pro $0.50/300 · Unlimited $2.00/9999 · 24h window
+                </div>
+              </div>
+
+              {/* Capital Pool */}
+              <div className="gap-card" style={{ borderColor: theme.arc + "44", background: theme.arcDim }}>
+                <div className="gap-card-header">
+                  <span className="gap-title" style={{ color: theme.arc }}>Capital Pool + HWM Perf Fee</span>
+                </div>
+                <div className="gap-flow">
+                  {[
+                    { text: "Depositor USDC", color: theme.circle },
+                    "→",
+                    { text: "NAV = deposited + PnL − fees", color: theme.arc },
+                    "→",
+                    { text: "HWM tracks peak", color: theme.arc },
+                    "→",
+                    { text: "NAV > HWM?", color: theme.arc },
+                    "→",
+                    { text: "20% perf fee to operator", color: theme.seller },
+                  ].map((s, i) =>
+                    typeof s === "string" ? (
+                      <span key={i} className="gap-arrow" style={{ color: theme.textMuted }}>{s}</span>
+                    ) : (
+                      <span key={i} className="gap-step" style={{ borderColor: s.color + "55", color: s.color, background: s.color + "11" }}>{s.text}</span>
+                    )
+                  )}
+                </div>
+                <div className="gap-metric" style={{ background: theme.arc + "11", color: theme.arc }}>
+                  PERFORMANCE_FEE_PCT = 20% · capped at pnl × 0.20 · HWM resets on new peak
+                </div>
+              </div>
+
+            </div>
+          </div>
+
           {/* LEGEND */}
           <div className="legend">
             {[
@@ -762,7 +997,7 @@ export default function SignalPayDiagram() {
           {/* FOOTER */}
           <div className="footer">
             <div className="footer-left">
-              SignalPay v1 · Arc Testnet · Chain ID 5042002 · USDC 0x3600...0000
+              SignalPay v2 · Arc Testnet · Chain ID 5042002 · USDC 0x3600...0000
             </div>
             <div className="footer-right">
               <span className="chip chip-arc">Arc L1</span>

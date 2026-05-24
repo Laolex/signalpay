@@ -7,23 +7,63 @@ import { useRegistryStats, useAllProviders } from "./useRegistry";
 import { SIGNAL_REGISTRY_ADDRESS } from "./wagmi";
 
 // ── Design tokens ────────────────────────────────────────────────
-const C = {
-  bg:      "#0a0a0a",
-  panel:   "#111111",
-  row:     "#161616",
-  border:  "#222222",
-  border2: "#2a2a2a",
-  text:    "#e8e8e8",
-  dim:     "#666666",
-  muted:   "#444444",
-  orange:  "#ff8c00",
+const DARK = {
+  bg:      "#050400",
+  panel:   "#0c0a04",
+  row:     "#110e06",
+  border:  "#2a1e06",
+  border2: "#3d2d0a",
+  text:    "#f0e6cc",
+  dim:     "#7a6030",
+  muted:   "#4a3818",
+  orange:  "#ff6600",
   green:   "#00cc88",
   red:     "#ff4455",
   blue:    "#4a9eff",
-  yellow:  "#ffcc00",
+  yellow:  "#ffaa00",
   cyan:    "#00ccdd",
   purple:  "#aa88ff",
 };
+
+const LIGHT = {
+  bg:      "#faf7f0",
+  panel:   "#f0ebe0",
+  row:     "#e8e0d0",
+  border:  "#d4c4a0",
+  border2: "#c0a878",
+  text:    "#1a1006",
+  dim:     "#6b5530",
+  muted:   "#a08050",
+  orange:  "#cc4400",
+  green:   "#007755",
+  red:     "#cc2233",
+  blue:    "#1a5abf",
+  yellow:  "#886600",
+  cyan:    "#006677",
+  purple:  "#5522bb",
+};
+
+type Theme = typeof DARK;
+let _theme: Theme = (() => {
+  try { return localStorage.getItem("sp-theme") === "light" ? LIGHT : DARK; } catch { return DARK; }
+})();
+const _subs = new Set<() => void>();
+
+function useC(): Theme {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const fn = () => tick(n => n + 1);
+    _subs.add(fn);
+    return () => { _subs.delete(fn); };
+  }, []);
+  return _theme;
+}
+
+function toggleTheme() {
+  _theme = _theme === DARK ? LIGHT : DARK;
+  try { localStorage.setItem("sp-theme", _theme === LIGHT ? "light" : "dark"); } catch {}
+  _subs.forEach(fn => fn());
+}
 
 const MONO = "'IBM Plex Mono', 'Courier New', monospace";
 
@@ -38,12 +78,12 @@ const PROVIDERS_STATIC = [
 ];
 
 const CAT_COLOR: Record<string, string> = {
-  PRICE_ORACLE:     C.green,
-  SENTIMENT:        C.purple,
-  TRADE_SIGNAL:     C.orange,
-  WHALE_ALERT:      C.cyan,
-  WALLET_SCORE:     C.yellow,
-  YIELD_INTEL:      C.blue,
+  PRICE_ORACLE:     DARK.green,
+  SENTIMENT:        DARK.purple,
+  TRADE_SIGNAL:     DARK.orange,
+  WHALE_ALERT:      DARK.cyan,
+  WALLET_SCORE:     DARK.yellow,
+  YIELD_INTEL:      DARK.blue,
   COMPOSITE_SIGNAL: "#e040fb",
 };
 
@@ -58,16 +98,16 @@ const CAT_TAG: Record<string, string> = {
 };
 
 const ACTION_COLOR: Record<string, string> = {
-  INIT:       C.dim,
-  DISCOVER:   C.cyan,
-  SELECT:     C.blue,
-  PAY:        C.yellow,
-  RECEIVE:    C.green,
-  REPUTATION: C.dim,
-  ANALYZE:    C.cyan,
-  EXECUTE:    C.orange,
-  SUMMARY:    C.green,
-  ERROR:      C.red,
+  INIT:       DARK.dim,
+  DISCOVER:   DARK.cyan,
+  SELECT:     DARK.blue,
+  PAY:        DARK.yellow,
+  RECEIVE:    DARK.green,
+  REPUTATION: DARK.dim,
+  ANALYZE:    DARK.cyan,
+  EXECUTE:    DARK.orange,
+  SUMMARY:    DARK.green,
+  ERROR:      DARK.red,
 };
 
 function timeAgo(ms: number) {
@@ -141,6 +181,7 @@ type Sig = NonNullable<ReturnType<typeof normalizeSignal>>;
 // ── Shared primitives ────────────────────────────────────────────
 
 function Panel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  const C = useC();
   return (
     <div style={{ background: C.panel, border: `1px solid ${C.border}`, ...style }}>
       {children}
@@ -149,6 +190,7 @@ function Panel({ children, style }: { children: React.ReactNode; style?: React.C
 }
 
 function Label({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  const C = useC();
   return (
     <span style={{
       fontSize: 9, letterSpacing: "0.12em", color: C.dim,
@@ -159,7 +201,9 @@ function Label({ children, style }: { children: React.ReactNode; style?: React.C
   );
 }
 
-function StatCell({ label, value, color = C.text, sub }: { label: string; value: string | number; color?: string; sub?: string }) {
+function StatCell({ label, value, color, sub }: { label: string; value: string | number; color?: string; sub?: string }) {
+  const C = useC();
+  color = color ?? C.text;
   return (
     <div style={{ padding: "10px 14px", borderRight: `1px solid ${C.border}` }}>
       <Label>{label}</Label>
@@ -170,6 +214,7 @@ function StatCell({ label, value, color = C.text, sub }: { label: string; value:
 }
 
 function Tab({ id, label, active, onClick }: { id: string; label: string; active: boolean; onClick: () => void }) {
+  const C = useC();
   return (
     <button onClick={onClick} style={{
       background: "none", border: "none",
@@ -185,6 +230,7 @@ function Tab({ id, label, active, onClick }: { id: string; label: string; active
 
 // ── Governance bar ───────────────────────────────────────────────
 function GovernanceBar() {
+  const C = useC();
   const [policy, setPolicy] = useState<any>(null);
 
   useEffect(() => {
@@ -211,7 +257,7 @@ function GovernanceBar() {
         { k: "MAX/CALL",   v: `$${p.max_per_call_usdc?.toFixed(3)}`,          c: C.text },
         { k: "DAILY CAP",  v: `$${p.daily_budget_usdc?.toFixed(2)}`,           c: C.text },
         { k: "HUMAN GATE", v: `>$${p.require_human_above_usdc?.toFixed(3)}`,   c: C.yellow },
-        { k: "WHITELIST",  v: p.whitelist?.[0] === "*" ? "OPEN" : `${p.whitelist?.length} addr`, c: C.green },
+        { k: "ACCESS",     v: p.whitelist?.[0] === "*" ? "OPEN" : "RESTRICTED", c: p.whitelist?.[0] === "*" ? C.green : C.yellow },
       ].map(({ k, v, c }) => (
         <div key={k} style={{ padding: "6px 14px", borderRight: `1px solid ${C.border}`, display: "flex", gap: 6, alignItems: "center" }}>
           <Label>{k}</Label>
@@ -236,6 +282,7 @@ function GovernanceBar() {
 
 // ── Signal row (table format) ────────────────────────────────────
 function SignalRow({ sig, index }: { sig: Sig; index: number }) {
+  const C = useC();
   const color = CAT_COLOR[sig.category] ?? C.text;
   const tag = CAT_TAG[sig.category] ?? "SIG";
   const d = sig.data;
@@ -324,6 +371,7 @@ const COMPLIANCE_COLORS: Record<string, string> = {
 };
 
 function AgentWallet() {
+  const C = useC();
   const [info, setInfo] = useState<{ address: string | null; balance_usdc: number; funded: boolean } | null>(null);
   const [compliance, setCompliance] = useState<{ risk_tier: string; risk_score: number; flags: string[]; sanctions_hit: boolean } | null>(null);
   const [amount, setAmount] = useState("0.01");
@@ -485,6 +533,7 @@ function AgentWallet() {
 
 // ── Agent Console ────────────────────────────────────────────────
 function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig) => void }) {
+  const C = useC();
   const [logs, setLogs] = useState<{ action: string; msg: string; ts: number; signal?: any; txHash?: string }[]>([]);
   const [running, setRunning] = useState(false);
   const [budget, setBudget] = useState(0.1);
@@ -509,7 +558,12 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wallet_address: address ?? "" }),
       });
-      const reader = resp.body!.getReader();
+      if (!resp.ok || !resp.body) {
+        addLog("ERROR", `Server returned ${resp.status} — is the backend running?`);
+        setRunning(false);
+        return;
+      }
+      const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
       while (true) {
@@ -701,6 +755,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
 }
 
 function GovernanceMini() {
+  const C = useC();
   const [policy, setPolicy] = useState<any>(null);
   useEffect(() => {
     const load = () => fetch(`${API_BASE}/governance/policy`).then(r => r.json()).then(setPolicy).catch(() => {});
@@ -733,6 +788,7 @@ function GovernanceMini() {
 
 // ── Signal Explorer (table view) ─────────────────────────────────
 function SignalExplorer() {
+  const C = useC();
   const [selected, setSelected] = useState<number | null>(null);
   const [providers, setProviders] = useState(PROVIDERS_STATIC);
   const [stats, setStats] = useState<{ total_calls: number; total_revenue_usdc: number } | null>(null);
@@ -862,7 +918,7 @@ function SignalExplorer() {
 
 // ── Provider Stats ───────────────────────────────────────────────
 // ── Accuracy colour helper ───────────────────────────────────────
-function accColor(v: number | undefined) {
+function accColor(v: number | undefined, C: Theme) {
   if (v === undefined) return C.muted;
   if (v >= 0.70) return C.green;
   if (v >= 0.55) return C.yellow;
@@ -870,7 +926,7 @@ function accColor(v: number | undefined) {
   return C.red;
 }
 
-function sharpeColor(s: number | undefined) {
+function sharpeColor(s: number | undefined, C: Theme) {
   if (s === undefined) return C.muted;
   if (s >= 0.5) return C.green;
   if (s >= 0) return C.yellow;
@@ -878,6 +934,7 @@ function sharpeColor(s: number | undefined) {
 }
 
 function ProviderDashboard() {
+  const C = useC();
   const [stats, setStats] = useState<{ total_revenue_usdc: number; total_calls: number; recent: any[] } | null>(null);
   const [repMetrics, setRepMetrics] = useState<Record<string, any>>({});
   const [economics, setEconomics]   = useState<any>(null);
@@ -950,7 +1007,7 @@ function ProviderDashboard() {
         <StatCell label="LIFETIME SPEND" value={`$${totalLifetimeSpend.toFixed(4)}`} color={C.orange} sub={`${totalSessions} sessions`} />
         <StatCell label="AVG HIT RATE"
           value={avgHitRate !== null ? `${(avgHitRate * 100).toFixed(1)}%` : "—"}
-          color={avgHitRate !== null ? accColor(avgHitRate) : C.muted}
+          color={avgHitRate !== null ? accColor(avgHitRate, C) : C.muted}
           sub={resolvedTotal > 0 ? `${resolvedTotal} resolved` : "accumulating"} />
         <div style={{ flex: 1 }} />
       </Panel>
@@ -1101,13 +1158,13 @@ function ProviderDashboard() {
               <span style={{ color: hasData && m.resolved_count > 0 ? C.dim : C.muted }}>
                 {hasData && m.resolved_count > 0 ? m.resolved_count : (m?.pending_count > 0 ? `${m.pending_count}⏳` : "—")}
               </span>
-              <span style={{ color: hasData && m.resolved_count > 0 ? accColor(m.hit_rate) : C.muted, fontWeight: m?.resolved_count >= 5 ? 700 : 400 }}>
+              <span style={{ color: hasData && m.resolved_count > 0 ? accColor(m.hit_rate, C) : C.muted, fontWeight: m?.resolved_count >= 5 ? 700 : 400 }}>
                 {hasData && m.resolved_count > 0 ? `${(m.hit_rate * 100).toFixed(1)}%` : "—"}
               </span>
-              <span style={{ color: hasData && m.resolved_count > 0 ? sharpeColor(m.sharpe_ratio) : C.muted }}>
+              <span style={{ color: hasData && m.resolved_count > 0 ? sharpeColor(m.sharpe_ratio, C) : C.muted }}>
                 {hasData && m.resolved_count > 0 ? (m.sharpe_ratio >= 0 ? `+${m.sharpe_ratio.toFixed(2)}` : m.sharpe_ratio.toFixed(2)) : "—"}
               </span>
-              <span style={{ color: hasData ? accColor(m.composite_accuracy) : C.muted, fontWeight: 700 }}>
+              <span style={{ color: hasData ? accColor(m.composite_accuracy, C) : C.muted, fontWeight: 700 }}>
                 {hasData ? `${(m.composite_accuracy * 100).toFixed(0)}` : "—"}
                 {hasData ? <span style={{ color: C.muted, fontWeight: 400 }}>/100</span> : null}
               </span>
@@ -1128,9 +1185,9 @@ function ProviderDashboard() {
           <Label>OPEN POSITIONS — SIMULATED PAPER TRADING · $10/TRADE</Label>
           <div style={{ display: "flex", gap: 16, fontSize: 9, color: C.muted }}>
             {perfSummary && perfSummary.total_trades > 0 && <>
-              <span>WIN RATE <span style={{ color: accColor(perfSummary.win_rate), fontWeight: 700 }}>{(perfSummary.win_rate * 100).toFixed(0)}%</span></span>
+              <span>WIN RATE <span style={{ color: accColor(perfSummary.win_rate, C), fontWeight: 700 }}>{(perfSummary.win_rate * 100).toFixed(0)}%</span></span>
               <span>TOTAL P&amp;L <span style={{ color: (perfSummary.total_pnl_usdc ?? 0) >= 0 ? C.green : C.red, fontWeight: 700 }}>{(perfSummary.total_pnl_usdc ?? 0) >= 0 ? "+" : ""}${(perfSummary.total_pnl_usdc ?? 0).toFixed(4)}</span></span>
-              <span>SHARPE <span style={{ color: sharpeColor(perfSummary.trade_sharpe), fontWeight: 700 }}>{(perfSummary.trade_sharpe ?? 0) >= 0 ? "+" : ""}{(perfSummary.trade_sharpe ?? 0).toFixed(2)}</span></span>
+              <span>SHARPE <span style={{ color: sharpeColor(perfSummary.trade_sharpe, C), fontWeight: 700 }}>{(perfSummary.trade_sharpe ?? 0) >= 0 ? "+" : ""}{(perfSummary.trade_sharpe ?? 0).toFixed(2)}</span></span>
             </>}
           </div>
         </div>
@@ -1282,7 +1339,7 @@ function ProviderDashboard() {
               <span style={{ color: C.text }}>{p.name}</span>
               <span style={{ color: C.orange }}>${(p.priceUSDC ?? p.price ?? 0).toFixed(3)}/call</span>
               <span style={{ color: repColor }}>{rep > 0 ? `${rep}/100` : "—"}</span>
-              <span style={{ color: m ? accColor(m.composite_accuracy) : C.muted, fontWeight: 700 }}>
+              <span style={{ color: m ? accColor(m.composite_accuracy, C) : C.muted, fontWeight: 700 }}>
                 {m ? `${(m.composite_accuracy * 100).toFixed(0)}` : "—"}
               </span>
             </div>
@@ -1306,12 +1363,12 @@ const BASE_PRICES: Record<string, number> = {
 };
 
 const CHAIN_INFO: Record<number, { name: string; symbol: string; color: string; bridge: number }> = {
-  5042002: { name: "Arc Testnet",  symbol: "ARC",   color: C.cyan,   bridge: 0.000 },
-  8453:    { name: "Base",         symbol: "BASE",  color: C.blue,   bridge: 0.002 },
-  42161:   { name: "Arbitrum One", symbol: "ARB",   color: C.green,  bridge: 0.003 },
-  10:      { name: "Optimism",     symbol: "OP",    color: C.red,    bridge: 0.003 },
-  137:     { name: "Polygon",      symbol: "MATIC", color: C.purple, bridge: 0.002 },
-  1:       { name: "Ethereum",     symbol: "ETH",   color: "#8888ff", bridge: 0.008 },
+  5042002: { name: "Arc Testnet",  symbol: "ARC",   color: DARK.cyan,   bridge: 0.000 },
+  8453:    { name: "Base",         symbol: "BASE",  color: DARK.blue,   bridge: 0.002 },
+  42161:   { name: "Arbitrum One", symbol: "ARB",   color: DARK.green,  bridge: 0.003 },
+  10:      { name: "Optimism",     symbol: "OP",    color: DARK.red,    bridge: 0.003 },
+  137:     { name: "Polygon",      symbol: "MATIC", color: DARK.purple, bridge: 0.002 },
+  1:       { name: "Ethereum",     symbol: "ETH",   color: "#8888ff",   bridge: 0.008 },
 };
 const ARC_CHAIN_ID = 5042002;
 
@@ -1322,6 +1379,7 @@ function timeLeft(expiresAt: number): string {
 }
 
 function AuctionDashboard() {
+  const C = useC();
   const [bids, setBids]             = useState<any[]>([]);
   const [history, setHistory]       = useState<any[]>([]);
   const [chainProviders, setChainProviders] = useState<Record<string, any>>({});
@@ -2298,6 +2356,7 @@ function AuctionDashboard() {
 
 // ── Treasury Dashboard (GAP 8) ───────────────────────────────────
 function TreasuryDashboard() {
+  const C = useC();
   const [treasury, setTreasury] = useState<any>(null);
 
   const load = useCallback(() => {
@@ -2439,6 +2498,7 @@ function TreasuryDashboard() {
 
 // ── Network / Faucet ─────────────────────────────────────────────
 function Network() {
+  const C = useC();
   const [wallet, setWallet] = useState("");
   const [status, setStatus] = useState<{ type: string; msg: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -2567,54 +2627,85 @@ function Network() {
 }
 
 // ── Top ticker strip ─────────────────────────────────────────────
+const TICKER_COINS = [
+  { id: "bitcoin",      sym: "BTC"   },
+  { id: "ethereum",     sym: "ETH"   },
+  { id: "solana",       sym: "SOL"   },
+  { id: "binancecoin",  sym: "BNB"   },
+  { id: "cardano",      sym: "ADA"   },
+  { id: "dogecoin",     sym: "DOGE"  },
+  { id: "avalanche-2",  sym: "AVAX"  },
+  { id: "chainlink",    sym: "LINK"  },
+  { id: "matic-network",sym: "MATIC" },
+  { id: "uniswap",      sym: "UNI"   },
+];
+
 function TickerStrip() {
-  const [prices, setPrices] = useState<Record<string, { price: number; change: number }>>({});
+  const C = useC();
+  const [items, setItems] = useState<Array<{ sym: string; price: number; change: number }>>([]);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const r = await fetch(`${API_BASE}/feed`);
+        const ids = TICKER_COINS.map(c => c.id).join(",");
+        const r = await fetch(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
+        );
         const d = await r.json();
-        const sig = d.signal;
-        if (sig?.category === "price_oracle") {
-          const token = sig.data?.token;
-          if (token) setPrices(prev => ({
-            ...prev,
-            [token]: { price: sig.data.price_usd, change: sig.data.change_24h_pct },
-          }));
-        }
+        const result = TICKER_COINS.map(c => ({
+          sym: c.sym,
+          price: d[c.id]?.usd ?? 0,
+          change: d[c.id]?.usd_24h_change ?? 0,
+        })).filter(c => c.price > 0);
+        if (result.length > 0) setItems(result);
       } catch {}
     };
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 30000);
     return () => clearInterval(id);
   }, []);
 
-  const pairs = Object.entries(prices);
+  const displayItems = items.length > 0 ? items : TICKER_COINS.map(c => ({ sym: c.sym, price: 0, change: 0 }));
+  // duplicate for seamless loop
+  const looped = [...displayItems, ...displayItems];
+  const duration = displayItems.length * 4;
 
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 0,
-      borderBottom: `1px solid ${C.border}`, background: C.bg,
-      fontSize: 10, fontFamily: MONO, overflowX: "hidden" as const,
-    }}>
-      {pairs.length === 0 && ["BTC", "ETH", "SOL"].map(t => (
-        <div key={t} style={{ padding: "4px 14px", borderRight: `1px solid ${C.border}`, color: C.muted }}>
-          {t} <span style={{ color: C.muted }}>—</span>
-        </div>
-      ))}
-      {pairs.map(([token, { price, change }]) => (
-        <div key={token} style={{ padding: "4px 14px", borderRight: `1px solid ${C.border}`, display: "flex", gap: 8 }}>
-          <span style={{ color: C.dim }}>{token}</span>
-          <span style={{ color: C.text, fontWeight: 600 }}>${price.toLocaleString("en", { maximumFractionDigits: 2 })}</span>
-          <span style={{ color: change >= 0 ? C.green : C.red }}>
-            {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-          </span>
-        </div>
-      ))}
-      <div style={{ flex: 1 }} />
-      <div style={{ padding: "4px 14px", color: C.muted, fontSize: 9 }}>
-        SRC: COINGECKO · ARC TESTNET · 30s
+    <div style={{ borderBottom: `1px solid ${C.border}`, background: C.panel, overflow: "hidden", position: "relative" }}>
+      <style>{`
+        @keyframes spTicker {
+          0%   { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
+        }
+        .sp-ticker-track {
+          display: flex;
+          width: max-content;
+          animation: spTicker ${duration}s linear infinite;
+        }
+        .sp-ticker-track:hover { animation-play-state: paused; }
+      `}</style>
+      <div className="sp-ticker-track">
+        {looped.map(({ sym, price, change }, i) => (
+          <div key={i} style={{
+            display: "flex", alignItems: "center", gap: 8,
+            padding: "5px 20px", borderRight: `1px solid ${C.border}`,
+            fontFamily: MONO, fontSize: 10, whiteSpace: "nowrap",
+          }}>
+            <span style={{ color: C.orange, fontWeight: 700, letterSpacing: "0.06em" }}>{sym}</span>
+            {price > 0 ? (
+              <>
+                <span style={{ color: C.text, fontWeight: 600 }}>
+                  ${price.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: price >= 1 ? 2 : 4 })}
+                </span>
+                <span style={{ color: change >= 0 ? C.green : C.red, fontSize: 9 }}>
+                  {change >= 0 ? "▲" : "▼"}{Math.abs(change).toFixed(2)}%
+                </span>
+              </>
+            ) : (
+              <span style={{ color: C.muted }}>···</span>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2622,6 +2713,7 @@ function TickerStrip() {
 
 // ── Main App ─────────────────────────────────────────────────────
 export default function SignalPayApp() {
+  const C = useC();
   const [tab, setTab] = useState("agent");
   const [signals, setSignals] = useState<Sig[]>([]);
   const { address, isConnected } = useAccount();
@@ -2635,7 +2727,15 @@ export default function SignalPayApp() {
         if (!cancelled && resp.ok) {
           const data = await resp.json();
           const norm = normalizeSignal(data.signal);
-          if (norm) setSignals(prev => [norm, ...prev].slice(0, 50));
+          if (norm) setSignals(prev => {
+            const fp = `${norm.category}|${norm.token}|${norm.data.price_usd}|${norm.data.amount_usd}|${norm.data.fear_greed_index}|${norm.data.action}`;
+            const cutoff = Date.now() - 30_000;
+            const isDupe = prev.some(p => {
+              const pf = `${p.category}|${p.token}|${p.data.price_usd}|${p.data.amount_usd}|${p.data.fear_greed_index}|${p.data.action}`;
+              return pf === fp && p.timestamp > cutoff;
+            });
+            return isDupe ? prev : [norm, ...prev].slice(0, 50);
+          });
         }
       } catch {}
       if (!cancelled) setTimeout(poll, 4000);
@@ -2644,7 +2744,15 @@ export default function SignalPayApp() {
     return () => { cancelled = true; };
   }, []);
 
-  const onSignal = useCallback((s: Sig) => setSignals(prev => [s, ...prev].slice(0, 50)), []);
+  const onSignal = useCallback((s: Sig) => setSignals(prev => {
+    const fp = `${s.category}|${s.token}|${s.data.price_usd}|${s.data.amount_usd}|${s.data.fear_greed_index}|${s.data.action}`;
+    const cutoff = Date.now() - 30_000;
+    const isDupe = prev.some(p => {
+      const pf = `${p.category}|${p.token}|${p.data.price_usd}|${p.data.amount_usd}|${p.data.fear_greed_index}|${p.data.action}`;
+      return pf === fp && p.timestamp > cutoff;
+    });
+    return isDupe ? prev : [s, ...prev].slice(0, 50);
+  }), []);
 
   const TABS = [
     { id: "agent",    label: "TERMINAL" },
@@ -2657,11 +2765,11 @@ export default function SignalPayApp() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: MONO }}>
+    <div style={{ minHeight: "100vh", width: "100%", maxWidth: "100vw", overflowX: "hidden", background: C.bg, color: C.text, fontFamily: MONO }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: ${C.bg}; }
+        html, body { overflow-x: hidden; max-width: 100vw; background: ${C.bg}; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: ${C.border2}; }
@@ -2674,11 +2782,19 @@ export default function SignalPayApp() {
       <div style={{
         display: "flex", alignItems: "center", borderBottom: `1px solid ${C.border}`,
         background: C.panel, height: 44, padding: "0 16px", gap: 16,
+        width: "100%", overflow: "hidden",
       }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: "0.06em" }}>SIGNAL</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.orange, letterSpacing: "0.06em" }}>PAY</span>
-          <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>GOVERNED AGENT PAYMENT INFRASTRUCTURE</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <img
+            src="/signal pay.png"
+            alt="SignalPay"
+            style={{ height: 32, width: 32, objectFit: "contain" }}
+          />
+          <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.text, letterSpacing: "0.06em" }}>SIGNAL</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.orange, letterSpacing: "0.06em" }}>PAY</span>
+            <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>GOVERNED AGENT PAYMENT INFRASTRUCTURE</span>
+          </div>
         </div>
         <div style={{ width: 1, height: 20, background: C.border }} />
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -2688,6 +2804,14 @@ export default function SignalPayApp() {
         <div style={{ width: 1, height: 20, background: C.border }} />
         <Label>x402 · EIP-3009 · CIRCLE NANOPAYMENTS</Label>
         <div style={{ flex: 1 }} />
+        <button onClick={toggleTheme} style={{
+          background: "none", border: `1px solid ${C.border2}`,
+          color: C.dim, cursor: "pointer", fontFamily: MONO,
+          fontSize: 10, padding: "4px 10px", letterSpacing: "0.08em",
+          borderRadius: 3,
+        }}>
+          {_theme === DARK ? "☀ LIGHT" : "◑ DARK"}
+        </button>
         <ConnectButton accountStatus="address" chainStatus="icon" showBalance={false} />
       </div>
 
@@ -2713,7 +2837,7 @@ export default function SignalPayApp() {
         {tab === "provider" && <ProviderDashboard />}
         {tab === "treasury" && <TreasuryDashboard />}
         {tab === "faucet"   && <Network />}
-        {tab === "arch"     && <SignalPayDiagram />}
+        {tab === "arch"     && <SignalPayDiagram isDark={_theme === DARK} />}
       </div>
 
       {/* Footer */}
@@ -2723,7 +2847,7 @@ export default function SignalPayApp() {
         display: "flex", justifyContent: "space-between", padding: "3px 14px",
         fontSize: 9, color: C.muted, fontFamily: MONO,
       }}>
-        <span>SIGNALPAY v0.1.0 — CIRCLE ARC HACKATHON 2026 — TRACK 4: AGENTIC ECONOMY</span>
+        <span>SIGNALPAY v0.1.0 — CIRCLE ARC HACKATHON 2026</span>
         <span>ARC L1 · CHAIN 5042002 · USDC NATIVE · ZERO-GAS NANOPAYMENTS</span>
       </div>
     </div>
