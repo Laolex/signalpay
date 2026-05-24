@@ -2786,7 +2786,7 @@ export default function SignalPayApp() {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <img
-            src="/logo.svg"
+            src="/signal%20pay.png"
             alt="SignalPay"
             style={{ height: 32, width: 32, objectFit: "contain" }}
           />
