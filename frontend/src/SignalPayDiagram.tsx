@@ -38,7 +38,7 @@ function buildStyles(t: T) {
 
   .root::before {
     content: '';
-    position: fixed;
+    position: absolute;
     top: -40%;
     left: -20%;
     width: 600px;
@@ -50,7 +50,7 @@ function buildStyles(t: T) {
 
   .root::after {
     content: '';
-    position: fixed;
+    position: absolute;
     bottom: -20%;
     right: -10%;
     width: 500px;
