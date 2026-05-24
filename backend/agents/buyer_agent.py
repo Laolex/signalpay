@@ -564,7 +564,7 @@ def analyze_signals(state: AgentState) -> AgentState:
     Analyze collected signals and decide next action.
 
     In production: this calls an LLM (Claude) to reason about the signals.
-    For the hackathon demo: rule-based analysis.
+    For the demo: rule-based analysis.
     """
     signals = state["signals_collected"]
     if not signals:

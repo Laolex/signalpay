@@ -61,7 +61,7 @@ class PaymentReceipt:
     valid: bool
 
 
-# ── In-memory payment ledger (hackathon scope) ─────────────────────
+# ── In-memory payment ledger (production → database) ───────────────
 
 @dataclass
 class PaymentLedger:
@@ -447,10 +447,19 @@ class X402PaymentMiddleware(BaseHTTPMiddleware):
 
         # ── GAP 13: subscription fast-path ────────────────────────────
         subscriber = request.headers.get("X-Subscriber-Address", "").strip().lower()
-        if subscriber:
+        sub_token = request.headers.get("X-Subscriber-Token", "").strip()
+        if subscriber and sub_token:
             try:
+                # Compliance check before allowing gated access
+                from app.compliance import check_wallet
+                comp = check_wallet(subscriber)
+                if not comp.allowed:
+                    return JSONResponse(
+                        status_code=403,
+                        content={"error": "Subscriber address blocked by compliance screening"},
+                    )
                 from app.subscription_store import consume_call
-                if consume_call(subscriber):
+                if consume_call(subscriber, sub_token):
                     response = await call_next(request)
                     response.headers["X-Subscription-Used"] = "true"
                     response.headers["X-Subscriber"] = subscriber

@@ -29,7 +29,7 @@ export const CATEGORY_NAMES = ["WHALE_ALERT","PRICE_ORACLE","SENTIMENT","WALLET_
 
 export const wagmiConfig = getDefaultConfig({
   appName: "SignalPay",
-  projectId: "signalpay-arc-hackathon",
+  projectId: "signalpay-arc",
   chains: [arcTestnet],
   transports: { [arcTestnet.id]: http("https://rpc.testnet.arc.network") },
 });
