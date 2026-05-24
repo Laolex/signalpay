@@ -2849,7 +2849,7 @@ export default function SignalPayApp() {
 
       {/* Footer */}
       <div style={{
-        position: "fixed", bottom: 0, left: 0, right: 0,
+        position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 100,
         borderTop: `1px solid ${C.border}`, background: C.panel,
         display: "flex", justifyContent: "space-between", padding: "3px 14px",
         fontSize: 9, color: C.muted, fontFamily: MONO,
