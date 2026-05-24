@@ -77,15 +77,17 @@ const PROVIDERS_STATIC = [
   { id: 5, key: "YIELD_INTEL",   name: "Yield Intelligence",     price: 0.003, endpoint: "/signals/yield-intel" },
 ];
 
-const CAT_COLOR: Record<string, string> = {
-  PRICE_ORACLE:     DARK.green,
-  SENTIMENT:        DARK.purple,
-  TRADE_SIGNAL:     DARK.orange,
-  WHALE_ALERT:      DARK.cyan,
-  WALLET_SCORE:     DARK.yellow,
-  YIELD_INTEL:      DARK.blue,
-  COMPOSITE_SIGNAL: "#e040fb",
-};
+function catColors(C: Theme): Record<string, string> {
+  return {
+    PRICE_ORACLE:     C.green,
+    SENTIMENT:        C.purple,
+    TRADE_SIGNAL:     C.orange,
+    WHALE_ALERT:      C.cyan,
+    WALLET_SCORE:     C.yellow,
+    YIELD_INTEL:      C.blue,
+    COMPOSITE_SIGNAL: "#e040fb",
+  };
+}
 
 const CAT_TAG: Record<string, string> = {
   PRICE_ORACLE:     "PX",
@@ -228,17 +230,35 @@ function Tab({ id, label, active, onClick }: { id: string; label: string; active
   );
 }
 
+// ── Shared governance polling (single interval, shared across all consumers) ──
+let _govData: any = null;
+const _govSubs = new Set<(p: any) => void>();
+let _govTimer: ReturnType<typeof setInterval> | null = null;
+
+function _fetchGov() {
+  fetch(`${API_BASE}/governance/policy`).then(r => r.json()).then(p => {
+    _govData = p;
+    _govSubs.forEach(fn => fn(p));
+  }).catch(() => {});
+}
+
+function useGovernancePolicy() {
+  const [policy, setPolicy] = useState<any>(_govData);
+  useEffect(() => {
+    _govSubs.add(setPolicy);
+    if (!_govTimer) { _fetchGov(); _govTimer = setInterval(_fetchGov, 5000); }
+    return () => {
+      _govSubs.delete(setPolicy);
+      if (_govSubs.size === 0 && _govTimer) { clearInterval(_govTimer); _govTimer = null; }
+    };
+  }, []);
+  return policy;
+}
+
 // ── Governance bar ───────────────────────────────────────────────
 function GovernanceBar() {
   const C = useC();
-  const [policy, setPolicy] = useState<any>(null);
-
-  useEffect(() => {
-    const load = () => fetch(`${API_BASE}/governance/policy`).then(r => r.json()).then(setPolicy).catch(() => {});
-    load();
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
-  }, []);
+  const policy = useGovernancePolicy();
 
   const p = policy?.policy;
   const today = policy?.today;
@@ -283,7 +303,7 @@ function GovernanceBar() {
 // ── Signal row (table format) ────────────────────────────────────
 function SignalRow({ sig, index }: { sig: Sig; index: number }) {
   const C = useC();
-  const color = CAT_COLOR[sig.category] ?? C.text;
+  const color = catColors(C)[sig.category] ?? C.text;
   const tag = CAT_TAG[sig.category] ?? "SIG";
   const d = sig.data;
   const conf = Math.round(sig.confidence * 100);
@@ -404,8 +424,9 @@ function AgentWallet() {
   useEffect(() => { if (isConfirmed) loadInfo(); }, [isConfirmed, loadInfo]);
 
   const deposit = () => {
-    if (!info?.address || !amount || isNaN(parseFloat(amount))) return;
-    const raw = BigInt(Math.round(parseFloat(amount) * 1_000_000));
+    const parsed = parseFloat(amount);
+    if (!info?.address || !amount || isNaN(parsed) || parsed <= 0) return;
+    const raw = BigInt(Math.round(parsed * 1_000_000));
     writeContract({
       address: USDC_ADDRESS,
       abi: USDC_ABI,
@@ -650,7 +671,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
               else                                         msgColor = C.dim;
             }
 
-            const tradeData = (isReceive && l.signal?.category === "trade_signal") ? l.signal.data : null;
+            const tradeData = (isReceive && l.signal?.category?.toUpperCase() === "TRADE_SIGNAL") ? l.signal.data : null;
 
             return (
               <div key={i} style={{
@@ -743,7 +764,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
               NO SIGNALS — START SESSION TO POPULATE
             </div>
           )}
-          {signals.slice(0, 30).map((s, i) => <SignalRow key={i} sig={s} index={i} />)}
+          {signals.slice(0, 30).map((s, i) => <SignalRow key={`${s.category}|${s.token}|${s.timestamp}`} sig={s} index={i} />)}
         </div>
 
         {/* Agent wallet + governance */}
@@ -756,13 +777,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
 
 function GovernanceMini() {
   const C = useC();
-  const [policy, setPolicy] = useState<any>(null);
-  useEffect(() => {
-    const load = () => fetch(`${API_BASE}/governance/policy`).then(r => r.json()).then(setPolicy).catch(() => {});
-    load();
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
-  }, []);
+  const policy = useGovernancePolicy();
 
   const today = policy?.today;
   const pct = today?.pct_used ?? 0;
@@ -834,7 +849,7 @@ function SignalExplorer() {
         </div>
 
         {providers.map((p, i) => {
-          const color = CAT_COLOR[p.key] ?? C.text;
+          const color = catColors(C)[p.key] ?? C.text;
           const tag = CAT_TAG[p.key] ?? "SIG";
           const isSelected = selected === p.id;
           return (
@@ -1049,7 +1064,7 @@ function ProviderDashboard() {
             </div>
             {eByProv.map((p: any, i: number) => {
               const catKey = p.provider_id.toUpperCase();
-              const color  = CAT_COLOR[catKey] ?? C.text;
+              const color  = catColors(C)[catKey] ?? C.text;
               const tag    = CAT_TAG[catKey] ?? "SIG";
               return (
                 <div key={p.provider_id} style={{
@@ -1139,7 +1154,7 @@ function ProviderDashboard() {
         </div>
         {PROVIDERS_STATIC.map((p, i) => {
           const key = p.key;
-          const color = CAT_COLOR[key] ?? C.text;
+          const color = catColors(C)[key] ?? C.text;
           const tag = CAT_TAG[key] ?? "SIG";
           const rk = repKey[key];
           const m = rk ? repMetrics[rk] : undefined;
@@ -1323,7 +1338,7 @@ function ProviderDashboard() {
         </div>
         {providers.map((p: any, i: number) => {
           const key = p.categoryName ?? p.key ?? "";
-          const color = CAT_COLOR[key] ?? C.text;
+          const color = catColors(C)[key] ?? C.text;
           const tag = CAT_TAG[key] ?? "SIG";
           const rep = p.reputation ?? 0;
           const repColor = rep >= 90 ? C.green : rep >= 70 ? C.yellow : rep > 0 ? C.red : C.muted;
@@ -1362,14 +1377,16 @@ const BASE_PRICES: Record<string, number> = {
   whale_alert: 0.002, wallet_score: 0.005, yield_intel: 0.003,
 };
 
-const CHAIN_INFO: Record<number, { name: string; symbol: string; color: string; bridge: number }> = {
-  5042002: { name: "Arc Testnet",  symbol: "ARC",   color: DARK.cyan,   bridge: 0.000 },
-  8453:    { name: "Base",         symbol: "BASE",  color: DARK.blue,   bridge: 0.002 },
-  42161:   { name: "Arbitrum One", symbol: "ARB",   color: DARK.green,  bridge: 0.003 },
-  10:      { name: "Optimism",     symbol: "OP",    color: DARK.red,    bridge: 0.003 },
-  137:     { name: "Polygon",      symbol: "MATIC", color: DARK.purple, bridge: 0.002 },
-  1:       { name: "Ethereum",     symbol: "ETH",   color: "#8888ff",   bridge: 0.008 },
-};
+function chainInfo(C: Theme): Record<number, { name: string; symbol: string; color: string; bridge: number }> {
+  return {
+    5042002: { name: "Arc Testnet",  symbol: "ARC",   color: C.cyan,   bridge: 0.000 },
+    8453:    { name: "Base",         symbol: "BASE",  color: C.blue,   bridge: 0.002 },
+    42161:   { name: "Arbitrum One", symbol: "ARB",   color: C.green,  bridge: 0.003 },
+    10:      { name: "Optimism",     symbol: "OP",    color: C.red,    bridge: 0.003 },
+    137:     { name: "Polygon",      symbol: "MATIC", color: C.purple, bridge: 0.002 },
+    1:       { name: "Ethereum",     symbol: "ETH",   color: "#8888ff", bridge: 0.008 },
+  };
+}
 const ARC_CHAIN_ID = 5042002;
 
 function timeLeft(expiresAt: number): string {
@@ -1393,9 +1410,8 @@ function AuctionDashboard() {
   const [status, setStatus]         = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
   const [chainStatus, setChainStatus] = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
   const [stakeStatus, setStakeStatus] = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
-  const [tick, setTick]             = useState(0);
+  const [, setTick]                 = useState(0);
   const [compositeEarnings, setCompositeEarnings] = useState<any>(null);
-  const [latestComposite, setLatestComposite]     = useState<any>(null);
   const [subRevenue, setSubRevenue]               = useState<any>(null);
   const [subForm, setSubForm]                     = useState({ address: "", tier: "basic" });
   const [subStatus, setSubStatus]                 = useState<{ type: "ok" | "err" | "loading"; msg: string } | null>(null);
@@ -1538,13 +1554,13 @@ function AuctionDashboard() {
         </div>
         {PROVIDER_IDS.map((pid, i) => {
           const catKey   = pid.toUpperCase();
-          const color    = CAT_COLOR[catKey] ?? C.text;
+          const color    = catColors(C)[catKey] ?? C.text;
           const tag      = CAT_TAG[catKey]   ?? "SIG";
           const base     = BASE_PRICES[pid] ?? 0.001;
           const bid      = bidByProvider[pid];
           const cpData   = chainProviders[pid];
           const chainId  = cpData?.chain_id ?? ARC_CHAIN_ID;
-          const chainMeta = CHAIN_INFO[chainId] ?? CHAIN_INFO[ARC_CHAIN_ID];
+          const chainMeta = chainInfo(C)[chainId] ?? chainInfo(C)[ARC_CHAIN_ID];
           const isNative = chainId === ARC_CHAIN_ID;
           return (
             <div key={pid} style={{
@@ -1582,7 +1598,7 @@ function AuctionDashboard() {
               {/* TTL */}
               {bid ? (
                 <span style={{ color: bid.seconds_remaining < 60 ? C.red : C.dim, fontSize: 9 }}>
-                  {tick >= 0 && timeLeft(bid.expires_at)}
+                  {timeLeft(bid.expires_at)}
                 </span>
               ) : (
                 <span style={{ color: C.muted, fontSize: 9 }}>no bid</span>
@@ -1708,7 +1724,7 @@ function AuctionDashboard() {
           {["CHAIN", "NAME", "BRIDGE $", "PENALTY", "PROVIDERS", "NATIVE"].map(h => <Label key={h}>{h}</Label>)}
         </div>
         {chains.map((ch: any, i: number) => {
-          const meta = CHAIN_INFO[ch.chain_id] ?? { color: C.dim, symbol: "?" };
+          const meta = chainInfo(C)[ch.chain_id] ?? { color: C.dim, symbol: "?" };
           return (
             <div key={ch.chain_id} style={{
               display: "grid", gridTemplateColumns: "60px 1fr 80px 80px 70px 60px",
@@ -1753,7 +1769,7 @@ function AuctionDashboard() {
                 onChange={e => setChainForm(f => ({ ...f, chain_id: Number(e.target.value) }))}
                 style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none" }}
               >
-                {Object.entries(CHAIN_INFO).map(([cid, meta]) => (
+                {Object.entries(chainInfo(C)).map(([cid, meta]) => (
                   <option key={cid} value={Number(cid)}>{meta.symbol} — {meta.name}</option>
                 ))}
               </select>
@@ -1764,7 +1780,7 @@ function AuctionDashboard() {
               <div style={{ fontSize: 13, fontWeight: 700, color: chainForm.chain_id === ARC_CHAIN_ID ? C.green : C.red }}>
                 {chainForm.chain_id === ARC_CHAIN_ID
                   ? "none"
-                  : `−${Math.round(Math.min((CHAIN_INFO[chainForm.chain_id]?.bridge ?? 0) / 0.01, 0.20) * 100)}%`
+                  : `−${Math.round(Math.min((chainInfo(C)[chainForm.chain_id]?.bridge ?? 0) / 0.01, 0.20) * 100)}%`
                 }
               </div>
             </div>
@@ -1810,7 +1826,7 @@ function AuctionDashboard() {
 
         {PROVIDER_IDS.map((pid, i) => {
           const catKey = pid.toUpperCase();
-          const color  = CAT_COLOR[catKey] ?? C.text;
+          const color  = catColors(C)[catKey] ?? C.text;
           const tag    = CAT_TAG[catKey]   ?? "SIG";
           const stake  = stakes.find((s: any) => s.provider_id === pid);
           const amt    = stake?.amount_usdc ?? 0;
@@ -1954,7 +1970,7 @@ function AuctionDashboard() {
         )}
         {slashHistory.map((ev: any, i: number) => {
           const catKey = (ev.provider_id ?? "").toUpperCase();
-          const color  = CAT_COLOR[catKey] ?? C.text;
+          const color  = catColors(C)[catKey] ?? C.text;
           const tag    = CAT_TAG[catKey]   ?? "SIG";
           return (
             <div key={ev.id} style={{
@@ -2327,7 +2343,7 @@ function AuctionDashboard() {
         )}
         {history.map((b: any, i: number) => {
           const catKey = (b.provider_id ?? "").toUpperCase();
-          const color  = CAT_COLOR[catKey] ?? C.text;
+          const color  = catColors(C)[catKey] ?? C.text;
           const tag    = CAT_TAG[catKey]   ?? "SIG";
           const isActive = b.active && b.seconds_remaining > 0;
           return (
