@@ -14,8 +14,8 @@ const DARK = {
   border:  "#2a1e06",
   border2: "#3d2d0a",
   text:    "#f0e6cc",
-  dim:     "#7a6030",
-  muted:   "#4a3818",
+  dim:     "#a08848",
+  muted:   "#7a6232",
   orange:  "#ff6600",
   green:   "#00cc88",
   red:     "#ff4455",
@@ -475,8 +475,8 @@ function AgentWallet() {
         {/* Balance */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
           <Label>USDC</Label>
-          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: MONO, color: info?.funded ? C.green : C.muted }}>
-            ${(info?.balance_usdc ?? 0).toFixed(6)}
+          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: MONO, color: !info ? C.muted : info.funded ? C.green : C.yellow }}>
+            {!info ? "···" : `$${info.balance_usdc.toFixed(4)}`}
           </span>
         </div>
 
@@ -572,7 +572,12 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
 
   const runAgent = useCallback(async () => {
     if (running || !address) return;
-    setRunning(true); setLogs([]); setBudget(0.1); setSpent(0); setSignalCount(0);
+    setRunning(true);
+    setLogs(prev => [
+      ...prev,
+      ...(prev.length > 0 ? [{ action: "INIT", msg: `── SESSION ${new Date().toLocaleTimeString("en", { hour12: false })} ──────────────────────────`, ts: Date.now() }] : []),
+    ]);
+    setBudget(0); setSpent(0); setSignalCount(0);
     try {
       const resp = await fetch(`${API_BASE}/agent/run`, {
         method: "POST",
