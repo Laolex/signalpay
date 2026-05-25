@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { API_BASE } from "./api";
 import SignalPayDiagram from "./SignalPayDiagram";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -66,6 +66,34 @@ function toggleTheme() {
 }
 
 const MONO = "'IBM Plex Mono', 'Courier New', monospace";
+
+// ── Error boundary ───────────────────────────────────────────────
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    return (
+      <div style={{ padding: 24, fontFamily: MONO, background: "#050400", color: "#ff4455", minHeight: "100vh" }}>
+        <div style={{ fontSize: 11, marginBottom: 8 }}>[ERROR] COMPONENT CRASHED</div>
+        <div style={{ fontSize: 9, color: "#a08848", marginBottom: 12 }}>{error.message}</div>
+        <button
+          onClick={() => this.setState({ error: null })}
+          style={{ background: "none", border: "1px solid #2a1e06", color: "#a08848", padding: "4px 10px", cursor: "pointer", fontFamily: MONO, fontSize: 9 }}
+        >
+          RETRY
+        </button>
+      </div>
+    );
+  }
+}
 
 // ── Provider catalog ────────────────────────────────────────────
 const PROVIDERS_STATIC = [
@@ -229,6 +257,42 @@ function Tab({ id, label, active, onClick }: { id: string; label: string; active
     }}>
       {label}
     </button>
+  );
+}
+
+function StyledSelect({ value, onChange, style, children }: {
+  value: string | number;
+  onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}) {
+  const C = useC();
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <select
+        value={value}
+        onChange={onChange}
+        style={{
+          appearance: "none",
+          WebkitAppearance: "none",
+          background: C.bg,
+          color: C.text,
+          border: `1px solid ${C.border2}`,
+          fontFamily: MONO,
+          fontSize: 10,
+          padding: "6px 24px 6px 8px",
+          outline: "none",
+          cursor: "pointer",
+          ...style,
+        }}
+      >
+        {children}
+      </select>
+      <span style={{
+        position: "absolute", right: 7, top: "50%", transform: "translateY(-50%)",
+        color: C.dim, fontSize: 8, pointerEvents: "none",
+      }}>▾</span>
+    </div>
   );
 }
 
@@ -1647,18 +1711,14 @@ function AuctionDashboard() {
           {/* Provider selector */}
           <div>
             <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>PROVIDER</div>
-            <select
+            <StyledSelect
               value={form.provider_id}
               onChange={e => setForm(f => ({ ...f, provider_id: e.target.value }))}
-              style={{
-                background: C.row, color: C.text, border: `1px solid ${C.border2}`,
-                fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none",
-              }}
             >
               {PROVIDER_IDS.map(pid => (
                 <option key={pid} value={pid}>{PROVIDER_LABELS[pid]}</option>
               ))}
-            </select>
+            </StyledSelect>
           </div>
 
           {/* Premium % input */}
@@ -1679,20 +1739,16 @@ function AuctionDashboard() {
           {/* Duration selector */}
           <div>
             <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>DURATION</div>
-            <select
+            <StyledSelect
               value={form.duration_s}
               onChange={e => setForm(f => ({ ...f, duration_s: Number(e.target.value) }))}
-              style={{
-                background: C.row, color: C.text, border: `1px solid ${C.border2}`,
-                fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none",
-              }}
             >
               <option value={60}>1 min</option>
               <option value={300}>5 min</option>
               <option value={600}>10 min</option>
               <option value={1800}>30 min</option>
               <option value={3600}>1 hour</option>
-            </select>
+            </StyledSelect>
           </div>
 
           {/* Score preview */}
@@ -1784,25 +1840,23 @@ function AuctionDashboard() {
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" as const }}>
             <div>
               <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>PROVIDER</div>
-              <select
+              <StyledSelect
                 value={chainForm.provider_id}
                 onChange={e => setChainForm(f => ({ ...f, provider_id: e.target.value }))}
-                style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none" }}
               >
                 {PROVIDER_IDS.map(pid => <option key={pid} value={pid}>{PROVIDER_LABELS[pid]}</option>)}
-              </select>
+              </StyledSelect>
             </div>
             <div>
               <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>CHAIN</div>
-              <select
+              <StyledSelect
                 value={chainForm.chain_id}
                 onChange={e => setChainForm(f => ({ ...f, chain_id: Number(e.target.value) }))}
-                style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none" }}
               >
                 {Object.entries(chainInfo(C)).map(([cid, meta]) => (
                   <option key={cid} value={Number(cid)}>{meta.symbol} — {meta.name}</option>
                 ))}
-              </select>
+              </StyledSelect>
             </div>
             {/* Penalty preview */}
             <div style={{ padding: "6px 0" }}>
@@ -1899,13 +1953,12 @@ function AuctionDashboard() {
             {/* Provider */}
             <div>
               <div style={{ fontSize: 8, color: C.muted, marginBottom: 4 }}>PROVIDER</div>
-              <select
+              <StyledSelect
                 value={stakeForm.provider_id}
                 onChange={e => { setStakeForm(f => ({ ...f, provider_id: e.target.value })); setSlashForm(f => ({ ...f, provider_id: e.target.value })); }}
-                style={{ background: C.row, color: C.text, border: `1px solid ${C.border2}`, fontFamily: MONO, fontSize: 10, padding: "6px 8px", outline: "none" }}
               >
                 {PROVIDER_IDS.map(pid => <option key={pid} value={pid}>{PROVIDER_LABELS[pid]}</option>)}
-              </select>
+              </StyledSelect>
             </div>
             {/* Stake amount */}
             <div>
@@ -2781,6 +2834,7 @@ export default function SignalPayApp() {
   ];
 
   return (
+    <ErrorBoundary>
     <div style={{ minHeight: "100vh", width: "100%", maxWidth: "100vw", overflowX: "hidden", background: C.bg, color: C.text, fontFamily: MONO }}>
 
       {/* Header */}
@@ -2861,5 +2915,6 @@ export default function SignalPayApp() {
         <span>ARC L1 · CHAIN 5042002 · USDC NATIVE · ZERO-GAS NANOPAYMENTS</span>
       </div>
     </div>
+    </ErrorBoundary>
   );
 }
