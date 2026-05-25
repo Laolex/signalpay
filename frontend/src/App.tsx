@@ -99,18 +99,20 @@ const CAT_TAG: Record<string, string> = {
   COMPOSITE_SIGNAL: "CMP",
 };
 
-const ACTION_COLOR: Record<string, string> = {
-  INIT:       DARK.dim,
-  DISCOVER:   DARK.cyan,
-  SELECT:     DARK.blue,
-  PAY:        DARK.yellow,
-  RECEIVE:    DARK.green,
-  REPUTATION: DARK.dim,
-  ANALYZE:    DARK.cyan,
-  EXECUTE:    DARK.orange,
-  SUMMARY:    DARK.green,
-  ERROR:      DARK.red,
-};
+function actionColors(C: Theme): Record<string, string> {
+  return {
+    INIT:       C.dim,
+    DISCOVER:   C.cyan,
+    SELECT:     C.blue,
+    PAY:        C.yellow,
+    RECEIVE:    C.green,
+    REPUTATION: C.dim,
+    ANALYZE:    C.cyan,
+    EXECUTE:    C.orange,
+    SUMMARY:    C.green,
+    ERROR:      C.red,
+  };
+}
 
 function timeAgo(ms: number) {
   const s = Math.floor(ms / 1000);
@@ -718,7 +720,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
                     {new Date(l.ts).toLocaleTimeString("en", { hour12: false })}
                   </span>
                   <span style={{
-                    color: ACTION_COLOR[l.action] ?? C.dim,
+                    color: actionColors(C)[l.action] ?? C.dim,
                     fontWeight: isExecute ? 700 : 400,
                   }}>
                     [{l.action}]
