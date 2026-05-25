@@ -147,7 +147,7 @@ def give_feedback(
 
         signed = acct.sign_transaction(tx)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        return FeedbackResult(True, tx_hash.hex(), None)
+        return FeedbackResult(True, "0x" + tx_hash.hex(), None)
 
     except Exception as e:
         # On any send failure, clear the local nonce cache so the next

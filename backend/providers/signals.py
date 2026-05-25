@@ -299,7 +299,7 @@ def _fetch_arc_transfers(lookback_blocks: int = 300) -> list[dict]:
             "from": Web3.to_checksum_address(from_addr),
             "to": Web3.to_checksum_address(to_addr),
             "value_usdc": value / 1_000_000,
-            "tx_hash": log["transactionHash"].hex(),
+            "tx_hash": "0x" + log["transactionHash"].hex(),
             "block": log["blockNumber"],
         })
 
