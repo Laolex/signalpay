@@ -349,29 +349,26 @@ function SignalRow({ sig, index }: { sig: Sig; index: number }) {
 
   return (
     <div style={{
-      display: "grid",
-      gridTemplateColumns: "44px 64px 72px 1fr 130px 52px 44px",
-      alignItems: "center",
       borderBottom: `1px solid ${C.border}`,
       background: index % 2 === 0 ? C.panel : C.row,
-      fontSize: 11, fontFamily: MONO,
-      padding: "8px 0",
+      fontFamily: MONO,
+      padding: "9px 10px",
     }}>
-      <div style={{ padding: "0 6px", color: C.muted, fontSize: 10 }}>{timeAgo(Date.now() - sig.timestamp)}</div>
-      <div style={{ padding: "0 6px" }}>
+      {/* Line 1: badge · token · value · conf */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
         <span style={{
           background: color + "22", color, fontSize: 9, fontWeight: 700,
-          padding: "3px 6px", letterSpacing: "0.06em",
+          padding: "2px 5px", letterSpacing: "0.06em", flexShrink: 0,
         }}>{tag}</span>
+        <span style={{ color: C.dim, fontSize: 10, fontWeight: 600, flexShrink: 0 }}>{sig.token}</span>
+        <span style={{ color: dirColor, fontWeight: 700, fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{mainVal}</span>
+        <span style={{ color: conf >= 80 ? C.green : conf >= 60 ? C.yellow : C.dim, fontSize: 10, fontWeight: 600, flexShrink: 0 }}>{conf}%</span>
       </div>
-      <div style={{ color: C.dim, fontSize: 11, padding: "0 2px" }}>{sig.token}</div>
-      <div style={{ color: dirColor, fontWeight: 700, fontSize: 12 }}>{mainVal}</div>
-      <div style={{ color: C.dim, fontSize: 10 }}>{subVal}</div>
-      <div style={{ padding: "0 4px" }}>
-        <span style={{ color: conf >= 80 ? C.green : conf >= 60 ? C.yellow : C.dim, fontWeight: 600 }}>{conf}%</span>
-      </div>
-      <div style={{ padding: "0 8px" }}>
-        <div style={{ width: "100%", height: 3, background: C.border2 }}>
+      {/* Line 2: age · detail · conf bar */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <span style={{ color: C.muted, fontSize: 9, flexShrink: 0 }}>{timeAgo(Date.now() - sig.timestamp)}</span>
+        <span style={{ color: C.muted, fontSize: 9, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{subVal}</span>
+        <div style={{ width: 40, height: 2, background: C.border2, flexShrink: 0 }}>
           <div style={{ width: `${conf}%`, height: "100%", background: color }} />
         </div>
       </div>
@@ -561,6 +558,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
   const [spent, setSpent] = useState(0);
   const [signalCount, setSignalCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const signalBaseRef = useRef(0);
   const { address } = useAccount();
   const addLog = useCallback((action: string, msg: string, extra?: { signal?: any; txHash?: string }) => {
     setLogs(prev => [...prev, { action, msg, ts: Date.now(), ...extra }]);
@@ -577,7 +575,8 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
       ...prev,
       ...(prev.length > 0 ? [{ action: "INIT", msg: `── SESSION ${new Date().toLocaleTimeString("en", { hour12: false })} ──────────────────────────`, ts: Date.now() }] : []),
     ]);
-    setBudget(0); setSpent(0); setSignalCount(0);
+    signalBaseRef.current = signalCount;
+    setBudget(0); setSpent(0);
     try {
       const resp = await fetch(`${API_BASE}/agent/run`, {
         method: "POST",
@@ -609,14 +608,14 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
             });
             if (ev.budget !== undefined) setBudget(ev.budget);
             if (ev.spent !== undefined) setSpent(ev.spent);
-            if (ev.signals !== undefined) setSignalCount(ev.signals);
+            if (ev.signals !== undefined) setSignalCount(signalBaseRef.current + ev.signals);
             if (ev.signal) { const n = normalizeSignal(ev.signal); if (n) onSignal(n); }
           } catch {}
         }
       }
     } catch (err) { addLog("ERROR", `Connection failed: ${err}`); }
     setRunning(false);
-  }, [running, addLog, onSignal]);
+  }, [running, addLog, onSignal, address]);
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gridTemplateRows: "1fr", gap: 1, height: "calc(100vh - 148px)", background: C.border }}>
@@ -757,24 +756,12 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
       {/* Right — signals + governance */}
       <div style={{ background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
         <Panel style={{ borderLeft: "none", borderRight: "none", borderTop: "none" }}>
-          {/* Signal section heading */}
           <div style={{
-            padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
+            padding: "7px 10px", borderBottom: `1px solid ${C.border}`,
             display: "flex", alignItems: "center", justifyContent: "space-between",
           }}>
             <Label style={{ color: C.orange, letterSpacing: "0.12em" }}>LIVE SIGNALS</Label>
-            <Label style={{ color: C.muted }}>PURCHASED THIS SESSION</Label>
-          </div>
-          {/* Signal table header */}
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "44px 64px 72px 1fr 130px 52px 44px",
-            padding: "6px 0",
-            borderBottom: `1px solid ${C.border2}`,
-          }}>
-            {["AGE", "TYPE", "TOKEN", "VALUE", "DETAIL", "CONF", ""].map(h => (
-              <Label key={h} style={{ padding: "0 6px" }}>{h}</Label>
-            ))}
+            <Label style={{ color: C.muted }}>{signals.length > 0 ? `${signals.length} RECEIVED` : "AWAITING SESSION"}</Label>
           </div>
         </Panel>
 
