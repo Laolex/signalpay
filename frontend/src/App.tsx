@@ -2738,31 +2738,6 @@ export default function SignalPayApp() {
     document.documentElement.style.setProperty("--sp-muted", C.muted);
   }, [C.bg, C.border2, C.muted]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const resp = await fetch(`${API_BASE}/feed`);
-        if (!cancelled && resp.ok) {
-          const data = await resp.json();
-          const norm = normalizeSignal(data.signal);
-          if (norm) setSignals(prev => {
-            const fp = `${norm.category}|${norm.token}|${norm.data.price_usd}|${norm.data.amount_usd}|${norm.data.fear_greed_index}|${norm.data.action}`;
-            const cutoff = Date.now() - 30_000;
-            const isDupe = prev.some(p => {
-              const pf = `${p.category}|${p.token}|${p.data.price_usd}|${p.data.amount_usd}|${p.data.fear_greed_index}|${p.data.action}`;
-              return pf === fp && p.timestamp > cutoff;
-            });
-            return isDupe ? prev : [norm, ...prev].slice(0, 50);
-          });
-        }
-      } catch {}
-      if (!cancelled) setTimeout(poll, 4000);
-    };
-    poll();
-    return () => { cancelled = true; };
-  }, []);
-
   const onSignal = useCallback((s: Sig) => setSignals(prev => {
     const fp = `${s.category}|${s.token}|${s.data.price_usd}|${s.data.amount_usd}|${s.data.fear_greed_index}|${s.data.action}`;
     const cutoff = Date.now() - 30_000;
