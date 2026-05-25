@@ -933,7 +933,7 @@ function SignalExplorer() {
       <Panel style={{ marginBottom: 1 }}>
         <div style={{
           display: "grid",
-          gridTemplateColumns: "48px 1fr 120px 100px 100px 80px",
+          gridTemplateColumns: "48px 1fr 160px 90px 100px 80px",
           padding: "6px 12px",
           borderBottom: `1px solid ${C.border}`,
         }}>
@@ -952,7 +952,7 @@ function SignalExplorer() {
                 onClick={() => setSelected(isSelected ? null : p.id)}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "48px 1fr 120px 100px 100px 80px",
+                  gridTemplateColumns: "48px 1fr 160px 90px 100px 80px",
                   padding: "8px 12px",
                   borderBottom: `1px solid ${C.border}`,
                   cursor: "pointer",
@@ -964,7 +964,7 @@ function SignalExplorer() {
                   {tag}
                 </span>
                 <span style={{ color: C.text, fontSize: 11 }}>{p.name}</span>
-                <span style={{ color: C.dim, fontSize: 10 }}>{p.endpoint.replace("{token}", ":token")}</span>
+                <span style={{ color: C.dim, fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.endpoint.replace("{token}", ":token")}</span>
                 <span style={{ color: C.orange, fontWeight: 700 }}>${p.price.toFixed(3)}</span>
                 <span style={{ color: C.dim, fontSize: 10 }}>x402 / EIP-3009</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
