@@ -350,25 +350,25 @@ function SignalRow({ sig, index }: { sig: Sig; index: number }) {
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "36px 60px 70px 1fr 120px 48px 40px",
+      gridTemplateColumns: "44px 64px 72px 1fr 130px 52px 44px",
       alignItems: "center",
       borderBottom: `1px solid ${C.border}`,
       background: index % 2 === 0 ? C.panel : C.row,
       fontSize: 11, fontFamily: MONO,
-      padding: "5px 0",
+      padding: "8px 0",
     }}>
-      <div style={{ padding: "0 8px", color: C.muted, fontSize: 9 }}>{timeAgo(Date.now() - sig.timestamp)}</div>
-      <div style={{ padding: "0 4px" }}>
+      <div style={{ padding: "0 6px", color: C.muted, fontSize: 10 }}>{timeAgo(Date.now() - sig.timestamp)}</div>
+      <div style={{ padding: "0 6px" }}>
         <span style={{
           background: color + "22", color, fontSize: 9, fontWeight: 700,
-          padding: "2px 5px", letterSpacing: "0.06em",
+          padding: "3px 6px", letterSpacing: "0.06em",
         }}>{tag}</span>
       </div>
-      <div style={{ color: C.dim, fontSize: 10 }}>{sig.token}</div>
-      <div style={{ color: dirColor, fontWeight: 600 }}>{mainVal}</div>
+      <div style={{ color: C.dim, fontSize: 11, padding: "0 2px" }}>{sig.token}</div>
+      <div style={{ color: dirColor, fontWeight: 700, fontSize: 12 }}>{mainVal}</div>
       <div style={{ color: C.dim, fontSize: 10 }}>{subVal}</div>
-      <div style={{ color: C.dim, fontSize: 9 }}>
-        <span style={{ color: conf >= 80 ? C.green : conf >= 60 ? C.yellow : C.dim }}>{conf}%</span>
+      <div style={{ padding: "0 4px" }}>
+        <span style={{ color: conf >= 80 ? C.green : conf >= 60 ? C.yellow : C.dim, fontWeight: 600 }}>{conf}%</span>
       </div>
       <div style={{ padding: "0 8px" }}>
         <div style={{ width: "100%", height: 3, background: C.border2 }}>
@@ -757,15 +757,23 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
       {/* Right — signals + governance */}
       <div style={{ background: C.bg, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
         <Panel style={{ borderLeft: "none", borderRight: "none", borderTop: "none" }}>
+          {/* Signal section heading */}
+          <div style={{
+            padding: "7px 12px", borderBottom: `1px solid ${C.border}`,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <Label style={{ color: C.orange, letterSpacing: "0.12em" }}>LIVE SIGNALS</Label>
+            <Label style={{ color: C.muted }}>PURCHASED THIS SESSION</Label>
+          </div>
           {/* Signal table header */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "36px 60px 70px 1fr 120px 48px 40px",
+            gridTemplateColumns: "44px 64px 72px 1fr 130px 52px 44px",
             padding: "6px 0",
             borderBottom: `1px solid ${C.border2}`,
           }}>
             {["AGE", "TYPE", "TOKEN", "VALUE", "DETAIL", "CONF", ""].map(h => (
-              <Label key={h} style={{ padding: "0 4px" }}>{h}</Label>
+              <Label key={h} style={{ padding: "0 6px" }}>{h}</Label>
             ))}
           </div>
         </Panel>
