@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { API_BASE } from "./api";
 import SignalPayDiagram from "./SignalPayDiagram";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useChainId, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { useRegistryStats, useAllProviders } from "./useRegistry";
 import { SIGNAL_REGISTRY_ADDRESS } from "./wagmi";
 
@@ -380,6 +380,7 @@ function SignalRow({ sig, index }: { sig: Sig; index: number }) {
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as const;
 const USDC_ABI = [
   { name: "transfer", type: "function", inputs: [{ name: "to", type: "address" }, { name: "value", type: "uint256" }], outputs: [{ name: "", type: "bool" }], stateMutability: "nonpayable" },
+  { name: "balanceOf", type: "function", inputs: [{ name: "account", type: "address" }], outputs: [{ name: "", type: "uint256" }], stateMutability: "view" },
 ] as const;
 
 // ── Agent Wallet ─────────────────────────────────────────────────
@@ -394,6 +395,16 @@ function AgentWallet() {
   const [amount, setAmount] = useState("0.01");
   const [copied, setCopied] = useState(false);
   const { isConnected, address } = useAccount();
+
+  const { data: walletUsdcRaw } = useReadContract({
+    address: USDC_ADDRESS,
+    abi: USDC_ABI,
+    functionName: "balanceOf",
+    args: [address as `0x${string}`],
+    chainId: 5042002,
+    query: { enabled: !!address && isConnected, refetchInterval: 5000 },
+  });
+  const walletUsdc = walletUsdcRaw != null ? Number(walletUsdcRaw) / 1_000_000 : null;
 
   const { writeContract, data: txHash, isPending, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash: txHash });
@@ -469,10 +480,19 @@ function AgentWallet() {
       </div>
 
       <div style={{ padding: "8px 12px" }}>
-        {/* Balance */}
+        {/* Connected wallet USDC balance */}
+        {address && (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+            <Label>YOUR USDC</Label>
+            <span style={{ fontSize: 13, fontWeight: 700, fontFamily: MONO, color: walletUsdc != null && walletUsdc > 0 ? C.green : C.muted }}>
+              {walletUsdc != null ? `$${walletUsdc.toFixed(4)}` : "···"}
+            </span>
+          </div>
+        )}
+        {/* Backend agent wallet balance */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-          <Label>USDC</Label>
-          <span style={{ fontSize: 15, fontWeight: 700, fontFamily: MONO, color: !info ? C.muted : info.funded ? C.green : C.yellow }}>
+          <Label>AGENT USDC</Label>
+          <span style={{ fontSize: 13, fontWeight: 700, fontFamily: MONO, color: !info ? C.muted : info.funded ? C.green : C.yellow }}>
             {!info ? "···" : `$${info.balance_usdc.toFixed(4)}`}
           </span>
         </div>
@@ -2813,15 +2833,20 @@ export default function SignalPayApp() {
       </div>
 
       {/* Content */}
-      <div style={tab === "agent" ? { overflow: "hidden" } : tab === "arch" ? { paddingBottom: 28 } : { padding: 16, paddingBottom: 28, maxWidth: 1100, margin: "0 auto" }}>
-        {tab === "agent"    && <AgentConsole signals={signals} onSignal={onSignal} />}
-        {tab === "explore"  && <SignalExplorer />}
-        {tab === "auction"  && <AuctionDashboard />}
-        {tab === "provider" && <ProviderDashboard />}
-        {tab === "treasury" && <TreasuryDashboard />}
-        {tab === "faucet"   && <Network />}
-        {tab === "arch"     && <SignalPayDiagram isDark={_theme === DARK} />}
+      {/* AgentConsole stays mounted always so budget/spent/logs persist across tab switches */}
+      <div style={{ display: tab === "agent" ? undefined : "none", overflow: "hidden" }}>
+        <AgentConsole signals={signals} onSignal={onSignal} />
       </div>
+      {tab !== "agent" && (
+        <div style={tab === "arch" ? { paddingBottom: 28 } : { padding: 16, paddingBottom: 28, maxWidth: 1100, margin: "0 auto" }}>
+          {tab === "explore"  && <SignalExplorer />}
+          {tab === "auction"  && <AuctionDashboard />}
+          {tab === "provider" && <ProviderDashboard />}
+          {tab === "treasury" && <TreasuryDashboard />}
+          {tab === "faucet"   && <Network />}
+          {tab === "arch"     && <SignalPayDiagram isDark={_theme === DARK} />}
+        </div>
+      )}
 
       {/* Footer */}
       <div style={{
