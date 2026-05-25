@@ -964,7 +964,7 @@ function SignalExplorer() {
                   {tag}
                 </span>
                 <span style={{ color: C.text, fontSize: 11 }}>{p.name}</span>
-                <span style={{ color: C.dim, fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{p.endpoint.replace("{token}", ":token")}</span>
+                <span style={{ color: C.dim, fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, paddingRight: 12 }}>{p.endpoint.replace("{token}", ":token")}</span>
                 <span style={{ color: C.orange, fontWeight: 700 }}>${p.price.toFixed(3)}</span>
                 <span style={{ color: C.dim, fontSize: 10 }}>x402 / EIP-3009</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
