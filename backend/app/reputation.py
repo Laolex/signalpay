@@ -128,7 +128,7 @@ def give_feedback(
         # Use 10% above base gas price to avoid replacement-underpriced
         gas_price = int(w3.eth.gas_price * 1.1)
 
-        tx = contract.functions.giveFeedback(
+        fn = contract.functions.giveFeedback(
             int(agent_id),
             int(clamped),
             2,  # valueDecimals — score is a percentage
@@ -137,7 +137,16 @@ def give_feedback(
             endpoint,
             feedback_uri,
             fhash,
-        ).build_transaction({
+        )
+
+        # Dry-run before sending — avoids on-chain reverts that produce
+        # confusing failed-tx links (e.g. agent_id not registered in registry).
+        try:
+            fn.call({"from": acct.address})
+        except Exception as sim_err:
+            return FeedbackResult(False, None, f"simulation reverted: {sim_err}")
+
+        tx = fn.build_transaction({
             "from": acct.address,
             "nonce": nonce,
             "chainId": ARC.chain_id,
