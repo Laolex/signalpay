@@ -559,6 +559,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
   const [signalCount, setSignalCount] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const signalBaseRef = useRef(0);
+  const spentBaseRef = useRef(0);
   const { address } = useAccount();
   const addLog = useCallback((action: string, msg: string, extra?: { signal?: any; txHash?: string }) => {
     setLogs(prev => [...prev, { action, msg, ts: Date.now(), ...extra }]);
@@ -576,7 +577,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
       ...(prev.length > 0 ? [{ action: "INIT", msg: `── SESSION ${new Date().toLocaleTimeString("en", { hour12: false })} ──────────────────────────`, ts: Date.now() }] : []),
     ]);
     signalBaseRef.current = signalCount;
-    setBudget(0); setSpent(0);
+    spentBaseRef.current = spent;
     try {
       const resp = await fetch(`${API_BASE}/agent/run`, {
         method: "POST",
@@ -607,7 +608,7 @@ function AgentConsole({ signals, onSignal }: { signals: Sig[]; onSignal: (s: Sig
               txHash: ev.tx_hash || undefined,
             });
             if (ev.budget !== undefined) setBudget(ev.budget);
-            if (ev.spent !== undefined) setSpent(ev.spent);
+            if (ev.spent !== undefined) setSpent(spentBaseRef.current + ev.spent);
             if (ev.signals !== undefined) setSignalCount(signalBaseRef.current + ev.signals);
             if (ev.signal) { const n = normalizeSignal(ev.signal); if (n) onSignal(n); }
           } catch {}
