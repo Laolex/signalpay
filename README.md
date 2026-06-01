@@ -1,5 +1,21 @@
 # SignalPay — Governed Agent Payment Infrastructure
 
+<p align="center">
+  <a href="https://signalpay-topaz.vercel.app"><img src="https://img.shields.io/badge/▶_Live_Demo-00C853?style=for-the-badge&logoColor=white" alt="Live Demo"/></a>
+  <img src="https://img.shields.io/badge/AI_Agent_Payments-7aa2f7?style=for-the-badge" alt="category"/>
+  <img src="https://img.shields.io/badge/License-MIT-bb9af7?style=for-the-badge" alt="MIT"/>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white"/>
+  <img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=flat-square&logo=langchain&logoColor=white"/>
+  <img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white"/>
+  <img src="https://img.shields.io/badge/React-61DAFB?style=flat-square&logo=react&logoColor=black"/>
+  <img src="https://img.shields.io/badge/Solidity-363636?style=flat-square&logo=solidity&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Arc_(Circle)-1A1A2E?style=flat-square"/>
+</p>
+
+
 > An API marketplace where AI agents pay per call in USDC, governed by programmable spend policy, settled on Arc in under a second.
 
 **Live:** https://signalpay-topaz.vercel.app
